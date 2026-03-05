@@ -1,0 +1,8 @@
+body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; margin: 24px; background: #f8fafc; }
+h1 { margin-bottom: 12px; }
+.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 12px; margin-bottom: 12px; }
+.card { background: white; border: 1px solid #e5e7eb; border-radius: 12px; padding: 12px; }
+input, textarea, select, button { width: 100%; margin-top: 6px; margin-bottom: 6px; padding: 8px; border-radius: 8px; border: 1px solid #d1d5db; }
+button { background: #111827; color: white; cursor: pointer; }
+table { width: 100%; border-collapse: collapse; }
+th, td { border-bottom: 1px solid #e5e7eb; padding: 8px; text-align: left; vertical-align: top; }

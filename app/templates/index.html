@@ -1,0 +1,100 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="UTF-8" />
+    <title>Peach Mission Control</title>
+    <link rel="stylesheet" href="/static/style.css" />
+  </head>
+  <body>
+    <h1>Peach Mission Control</h1>
+
+    <section class="grid">
+      <div class="card">
+        <h2>Task Status</h2>
+        <ul>
+          <li>Backlog: {{ task_status.get('backlog', 0) }}</li>
+          <li>In Progress: {{ task_status.get('in_progress', 0) }}</li>
+          <li>Blocked: {{ task_status.get('blocked', 0) }}</li>
+          <li>Done: {{ task_status.get('done', 0) }}</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h2>Application Pipeline</h2>
+        <ul>
+          <li>Discovered: {{ app_stage.get('discovered', 0) }}</li>
+          <li>Applied: {{ app_stage.get('applied', 0) }}</li>
+          <li>Interview: {{ app_stage.get('interview', 0) }}</li>
+          <li>Offer: {{ app_stage.get('offer', 0) }}</li>
+          <li>Rejected: {{ app_stage.get('rejected', 0) }}</li>
+        </ul>
+      </div>
+    </section>
+
+    <section class="grid">
+      <div class="card">
+        <h2>Add Task</h2>
+        <form method="post" action="/tasks">
+          <input name="title" placeholder="title" required />
+          <textarea name="description" placeholder="description"></textarea>
+          <input name="project" placeholder="project" value="general" />
+          <select name="priority">
+            <option value="low">low</option><option value="medium" selected>medium</option><option value="high">high</option>
+          </select>
+          <select name="owner">
+            <option value="lan">lan</option><option value="peach">peach</option><option value="joint" selected>joint</option>
+          </select>
+          <input name="due_date" type="date" />
+          <button type="submit">Create Task</button>
+        </form>
+      </div>
+
+      <div class="card">
+        <h2>Add Project</h2>
+        <form method="post" action="/projects">
+          <input name="name" placeholder="project name" required />
+          <textarea name="goal" placeholder="goal"></textarea>
+          <select name="status">
+            <option value="active">active</option><option value="paused">paused</option><option value="done">done</option>
+          </select>
+          <button type="submit">Create Project</button>
+        </form>
+      </div>
+
+      <div class="card">
+        <h2>Add Job Application</h2>
+        <form method="post" action="/applications">
+          <input name="company" placeholder="company" required />
+          <input name="role" placeholder="role" required />
+          <select name="stage">
+            <option value="discovered">discovered</option><option value="applied">applied</option><option value="interview">interview</option><option value="offer">offer</option><option value="rejected">rejected</option>
+          </select>
+          <input name="url" placeholder="job URL" />
+          <textarea name="notes" placeholder="notes"></textarea>
+          <button type="submit">Create Application</button>
+        </form>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>Tasks</h2>
+      <table>
+        <thead><tr><th>ID</th><th>Title</th><th>Project</th><th>Priority</th><th>Owner</th><th>Status</th><th>Due</th><th>Update</th></tr></thead>
+        <tbody>
+          {% for t in tasks %}
+          <tr>
+            <td>{{ t.id }}</td><td>{{ t.title }}</td><td>{{ t.project }}</td><td>{{ t.priority.value }}</td><td>{{ t.owner.value }}</td><td>{{ t.status.value }}</td><td>{{ t.due_date or '' }}</td>
+            <td>
+              <form method="post" action="/tasks/{{ t.id }}/status">
+                <select name="status">
+                  <option value="backlog">backlog</option><option value="in_progress">in_progress</option><option value="blocked">blocked</option><option value="done">done</option>
+                </select>
+                <button type="submit">Save</button>
+              </form>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </section>
+  </body>
+</html>

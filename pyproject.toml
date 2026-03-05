@@ -1,0 +1,37 @@
+[project]
+name = "peach-mission-control"
+version = "0.1.0"
+description = "Dashboard to manage Peach-Lan tasks, projects, and job pivot pipeline"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+  "fastapi>=0.116.0",
+  "uvicorn>=0.35.0",
+  "jinja2>=3.1.0",
+  "sqlmodel>=0.0.24",
+  "python-multipart>=0.0.20",
+]
+
+[dependency-groups]
+dev = [
+  "pytest>=8.4.0",
+  "ruff>=0.15.0",
+  "httpx>=0.28.0",
+]
+
+[build-system]
+requires = ["hatchling>=1.27.0"]
+build-backend = "hatchling.build"
+
+[tool.ruff]
+line-length = 100
+target-version = "py313"
+
+[tool.ruff.lint]
+select = ["E", "F", "I"]
+
+[tool.pytest.ini_options]
+addopts = "-q"
+
+[tool.hatch.build.targets.wheel]
+packages = ["app"]
