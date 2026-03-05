@@ -1,9 +1,14 @@
+import os
+
 from fastapi.testclient import TestClient
 from sqlmodel import SQLModel
 
 from app.db import engine
 from app.main import app
-from app.models import JobApplication, Project, Task
+from app.models import ApprovalRequest, Task
+
+os.environ["PMC_ADMIN_USER"] = "admin"
+os.environ["PMC_ADMIN_PASSWORD"] = "test-password"
 
 
 def reset_db() -> None:
@@ -11,9 +16,19 @@ def reset_db() -> None:
     SQLModel.metadata.create_all(engine)
 
 
-def test_create_task_flow() -> None:
+def login(client: TestClient) -> None:
+    response = client.post(
+        "/login",
+        data={"username": "admin", "password": "test-password"},
+        follow_redirects=False,
+    )
+    assert response.status_code == 303
+
+
+def test_create_task_and_kanban_flow() -> None:
     reset_db()
     with TestClient(app) as client:
+        login(client)
         response = client.post(
             "/tasks",
             data={
@@ -28,76 +43,94 @@ def test_create_task_flow() -> None:
         )
         assert response.status_code == 303
 
-        page = client.get("/")
+        page = client.get("/kanban")
         assert page.status_code == 200
         assert "Build DS portfolio website" in page.text
 
 
-def test_update_task_status_flow() -> None:
+def test_task_api_crud_flow() -> None:
     reset_db()
     with TestClient(app) as client:
-        client.post(
-            "/tasks",
-            data={"title": "Prepare ML interview notes"},
-            follow_redirects=False,
-        )
+        login(client)
 
-        with engine.connect() as conn:
-            task_id = conn.execute(Task.__table__.select()).fetchone()[0]
-
-        update = client.post(
-            f"/tasks/{task_id}/status",
-            data={"status": "in_progress"},
-            follow_redirects=False,
-        )
-        assert update.status_code == 303
-
-        page = client.get("/")
-        assert "in_progress" in page.text
-
-
-def test_create_project_flow() -> None:
-    reset_db()
-    with TestClient(app) as client:
-        response = client.post(
-            "/projects",
-            data={
-                "name": "AI Pivot Plan",
-                "goal": "Land DS role in advanced tech",
-                "status": "active",
+        create = client.post(
+            "/api/tasks",
+            json={
+                "title": "API created task",
+                "description": "from chat",
+                "priority": "medium",
+                "owner": "peach",
+                "project": "automation",
+                "status": "backlog",
             },
-            follow_redirects=False,
         )
-        assert response.status_code == 303
+        assert create.status_code == 201
+        task_id = create.json()["id"]
 
-        page = client.get("/")
-        assert page.status_code == 200
-        assert "AI Pivot Plan" in page.text
+        update = client.patch(f"/api/tasks/{task_id}", json={"status": "done"})
+        assert update.status_code == 200
+        assert update.json()["status"] == "done"
+
+        listed = client.get("/api/tasks")
+        assert listed.status_code == 200
+        assert listed.json()["items"][0]["title"] == "API created task"
 
 
-def test_create_job_application_flow() -> None:
+def test_approval_queue_and_report_endpoints() -> None:
     reset_db()
     with TestClient(app) as client:
-        response = client.post(
-            "/applications",
-            data={
-                "company": "OpenAI",
-                "role": "Applied Scientist",
-                "stage": "applied",
-                "url": "https://example.com/job",
-                "notes": "Tailored resume submitted",
+        login(client)
+        create = client.post(
+            "/api/approvals",
+            json={
+                "title": "Send outbound email",
+                "action_type": "external_email",
+                "payload": {"to": "x@example.com"},
+                "requested_by": "peach",
             },
-            follow_redirects=False,
         )
-        assert response.status_code == 303
+        assert create.status_code == 201
+        approval_id = create.json()["id"]
 
-        page = client.get("/")
-        assert page.status_code == 200
-        assert "Applied Scientist" in page.text
+        review = client.patch(
+            f"/api/approvals/{approval_id}",
+            params={"decision": "approved", "note": "safe to send"},
+        )
+        assert review.status_code == 200
+        assert review.json()["status"] == "approved"
+
+        approvals = client.get("/api/approvals")
+        assert approvals.status_code == 200
+        assert approvals.json()["items"][0]["action_type"] == "external_email"
+
+        weekly_api = client.get("/api/reports/weekly")
+        assert weekly_api.status_code == 200
+        assert "tasks_touched" in weekly_api.json()
+
+
+def test_export_endpoints() -> None:
+    reset_db()
+    with TestClient(app) as client:
+        login(client)
+        client.post("/api/tasks", json={"title": "Export me"})
+
+        json_export = client.get("/api/export/tasks.json")
+        assert json_export.status_code == 200
+        assert json_export.json()["items"][0]["title"] == "Export me"
+
+        csv_export = client.get("/api/export/tasks.csv")
+        assert csv_export.status_code == 200
+        assert "text/csv" in csv_export.headers["content-type"]
+        assert "Export me" in csv_export.text
+
+
+def test_auth_required_for_api() -> None:
+    reset_db()
+    with TestClient(app) as client:
+        resp = client.get("/api/tasks")
+        assert resp.status_code == 401
 
 
 def test_models_are_registered() -> None:
-    # Sanity check to ensure table models stay importable/registered.
     assert Task.__tablename__ == "task"
-    assert Project.__tablename__ == "project"
-    assert JobApplication.__tablename__ == "jobapplication"
+    assert ApprovalRequest.__tablename__ == "approvalrequest"

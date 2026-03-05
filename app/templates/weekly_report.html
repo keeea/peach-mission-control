@@ -1,0 +1,40 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="UTF-8" />
+    <title>Weekly Report · Peach Mission Control</title>
+    <link rel="stylesheet" href="/static/style.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <h1>Weekly Review</h1>
+      <nav><a href="/">Dashboard</a> <a href="/kanban">Kanban</a> <a href="/approvals">Approvals</a></nav>
+      <form method="post" action="/logout"><button type="submit">Logout ({{ user.username }})</button></form>
+    </header>
+    <section class="grid two">
+      <div class="card">
+        <h2>Tasks (last {{ report.window_days }} days)</h2>
+        <ul>
+          <li>Touched: {{ report.tasks_touched }}</li>
+          <li>Done: {{ report.tasks_done }}</li>
+          <li>Blocked: {{ report.tasks_blocked }}</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h2>Approvals</h2>
+        <ul>
+          <li>Created: {{ report.approvals_created }}</li>
+          <li>Pending: {{ report.approvals_pending }}</li>
+        </ul>
+      </div>
+    </section>
+    <section class="card">
+      <h2>Status Breakdown</h2>
+      <pre>{{ report.status_breakdown }}</pre>
+    </section>
+    <section class="card">
+      <h2>Owner Breakdown</h2>
+      <pre>{{ report.owner_breakdown }}</pre>
+    </section>
+  </body>
+</html>

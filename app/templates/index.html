@@ -6,9 +6,18 @@
     <link rel="stylesheet" href="/static/style.css" />
   </head>
   <body>
-    <h1>Peach Mission Control</h1>
+    <header class="topbar">
+      <h1>Peach Mission Control</h1>
+      <nav>
+        <a href="/">Dashboard</a>
+        <a href="/kanban">Kanban</a>
+        <a href="/approvals">Approvals</a>
+        <a href="/reports/weekly">Weekly Report</a>
+      </nav>
+      <form method="post" action="/logout"><button type="submit">Logout ({{ user.username }})</button></form>
+    </header>
 
-    <section class="grid">
+    <section class="grid two">
       <div class="card">
         <h2>Task Status</h2>
         <ul>
@@ -30,10 +39,10 @@
       </div>
     </section>
 
-    <section class="grid">
+    <section class="grid three">
       <div class="card">
         <h2>Add Task</h2>
-        <form method="post" action="/tasks">
+        <form method="post" action="/tasks" class="stack">
           <input name="title" placeholder="title" required />
           <textarea name="description" placeholder="description"></textarea>
           <input name="project" placeholder="project" value="general" />
@@ -50,7 +59,7 @@
 
       <div class="card">
         <h2>Add Project</h2>
-        <form method="post" action="/projects">
+        <form method="post" action="/projects" class="stack">
           <input name="name" placeholder="project name" required />
           <textarea name="goal" placeholder="goal"></textarea>
           <select name="status">
@@ -62,7 +71,7 @@
 
       <div class="card">
         <h2>Add Job Application</h2>
-        <form method="post" action="/applications">
+        <form method="post" action="/applications" class="stack">
           <input name="company" placeholder="company" required />
           <input name="role" placeholder="role" required />
           <select name="stage">
@@ -76,46 +85,17 @@
     </section>
 
     <section class="card">
-      <h2>Projects</h2>
-      <table>
-        <thead><tr><th>ID</th><th>Name</th><th>Goal</th><th>Status</th></tr></thead>
-        <tbody>
-          {% for p in projects %}
-          <tr><td>{{ p.id }}</td><td>{{ p.name }}</td><td>{{ p.goal }}</td><td>{{ p.status.value }}</td></tr>
-          {% endfor %}
-        </tbody>
-      </table>
+      <h2>Quick Exports</h2>
+      <p><a href="/api/export/tasks.json">Export tasks JSON</a> · <a href="/api/export/tasks.csv">Export tasks CSV</a></p>
     </section>
 
     <section class="card">
-      <h2>Applications</h2>
+      <h2>Recent Approval Queue</h2>
       <table>
-        <thead><tr><th>ID</th><th>Company</th><th>Role</th><th>Stage</th><th>URL</th></tr></thead>
+        <thead><tr><th>ID</th><th>Title</th><th>Status</th><th>Requested By</th></tr></thead>
         <tbody>
-          {% for a in apps %}
-          <tr><td>{{ a.id }}</td><td>{{ a.company }}</td><td>{{ a.role }}</td><td>{{ a.stage.value }}</td><td>{{ a.url }}</td></tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    </section>
-
-    <section class="card">
-      <h2>Tasks</h2>
-      <table>
-        <thead><tr><th>ID</th><th>Title</th><th>Project</th><th>Priority</th><th>Owner</th><th>Status</th><th>Due</th><th>Update</th></tr></thead>
-        <tbody>
-          {% for t in tasks %}
-          <tr>
-            <td>{{ t.id }}</td><td>{{ t.title }}</td><td>{{ t.project }}</td><td>{{ t.priority.value }}</td><td>{{ t.owner.value }}</td><td>{{ t.status.value }}</td><td>{{ t.due_date or '' }}</td>
-            <td>
-              <form method="post" action="/tasks/{{ t.id }}/status">
-                <select name="status">
-                  <option value="backlog">backlog</option><option value="in_progress">in_progress</option><option value="blocked">blocked</option><option value="done">done</option>
-                </select>
-                <button type="submit">Save</button>
-              </form>
-            </td>
-          </tr>
+          {% for a in approvals %}
+          <tr><td>{{ a.id }}</td><td>{{ a.title }}</td><td>{{ a.status.value }}</td><td>{{ a.requested_by }}</td></tr>
           {% endfor %}
         </tbody>
       </table>

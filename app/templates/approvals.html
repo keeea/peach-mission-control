@@ -1,0 +1,45 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="UTF-8" />
+    <title>Approvals · Peach Mission Control</title>
+    <link rel="stylesheet" href="/static/style.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <h1>审批队列 / Approval Queue</h1>
+      <nav><a href="/">Dashboard</a> <a href="/kanban">Kanban</a> <a href="/reports/weekly">Weekly Report</a></nav>
+      <form method="post" action="/logout"><button type="submit">Logout ({{ user.username }})</button></form>
+    </header>
+
+    <section class="card">
+      <table>
+        <thead><tr><th>ID</th><th>Action</th><th>Payload</th><th>Status</th><th>Review</th></tr></thead>
+        <tbody>
+          {% for item in items %}
+          <tr>
+            <td>{{ item.id }}</td>
+            <td>{{ item.title }}<br/><small>{{ item.action_type }}</small></td>
+            <td><code>{{ item.payload }}</code></td>
+            <td>{{ item.status.value }}</td>
+            <td>
+              {% if item.status.value == 'pending' %}
+              <form method="post" action="/approvals/{{ item.id }}/review" class="stack">
+                <select name="decision">
+                  <option value="approved">approved</option>
+                  <option value="rejected">rejected</option>
+                </select>
+                <input name="note" placeholder="optional note" />
+                <button type="submit">Submit</button>
+              </form>
+              {% else %}
+              <small>{{ item.reviewed_by }}<br/>{{ item.review_note }}</small>
+              {% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </section>
+  </body>
+</html>
