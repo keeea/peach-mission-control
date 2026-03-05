@@ -76,6 +76,30 @@
     </section>
 
     <section class="card">
+      <h2>Projects</h2>
+      <table>
+        <thead><tr><th>ID</th><th>Name</th><th>Goal</th><th>Status</th></tr></thead>
+        <tbody>
+          {% for p in projects %}
+          <tr><td>{{ p.id }}</td><td>{{ p.name }}</td><td>{{ p.goal }}</td><td>{{ p.status.value }}</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </section>
+
+    <section class="card">
+      <h2>Applications</h2>
+      <table>
+        <thead><tr><th>ID</th><th>Company</th><th>Role</th><th>Stage</th><th>URL</th></tr></thead>
+        <tbody>
+          {% for a in apps %}
+          <tr><td>{{ a.id }}</td><td>{{ a.company }}</td><td>{{ a.role }}</td><td>{{ a.stage.value }}</td><td>{{ a.url }}</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </section>
+
+    <section class="card">
       <h2>Tasks</h2>
       <table>
         <thead><tr><th>ID</th><th>Title</th><th>Project</th><th>Priority</th><th>Owner</th><th>Status</th><th>Due</th><th>Update</th></tr></thead>
