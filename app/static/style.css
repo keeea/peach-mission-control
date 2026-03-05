@@ -1,8 +1,124 @@
-body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; margin: 24px; background: #f8fafc; }
-h1 { margin-bottom: 12px; }
-.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 12px; margin-bottom: 12px; }
-.card { background: white; border: 1px solid #e5e7eb; border-radius: 12px; padding: 12px; }
-input, textarea, select, button { width: 100%; margin-top: 6px; margin-bottom: 6px; padding: 8px; border-radius: 8px; border: 1px solid #d1d5db; }
-button { background: #111827; color: white; cursor: pointer; }
-table { width: 100%; border-collapse: collapse; }
-th, td { border-bottom: 1px solid #e5e7eb; padding: 8px; text-align: left; vertical-align: top; }
+body {
+  font-family: Inter, -apple-system, BlinkMacSystemFont, sans-serif;
+  margin: 0;
+  background: #f3f6fb;
+  color: #1b2430;
+}
+
+h1,
+h2,
+h3 {
+  margin-top: 0;
+}
+
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1rem 1.5rem;
+  background: #1c2440;
+  color: #fff;
+}
+
+.topbar a {
+  color: #cfe0ff;
+  margin-right: 0.75rem;
+}
+
+.grid {
+  display: grid;
+  gap: 1rem;
+  padding: 1rem 1.5rem;
+}
+
+.grid.two {
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+}
+
+.grid.three {
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+}
+
+.card {
+  background: #fff;
+  border-radius: 10px;
+  box-shadow: 0 2px 6px rgb(28 36 64 / 10%);
+  padding: 1rem;
+}
+
+.stack {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.inline {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+
+input,
+textarea,
+select,
+button {
+  padding: 0.5rem;
+  border: 1px solid #d3d9e5;
+  border-radius: 6px;
+}
+
+button {
+  background: #3659e3;
+  color: white;
+  cursor: pointer;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+th,
+td {
+  text-align: left;
+  padding: 0.5rem;
+  border-bottom: 1px solid #e8ecf5;
+}
+
+.kanban-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(220px, 1fr));
+  gap: 1rem;
+  padding: 1rem 1.5rem;
+}
+
+.task-card {
+  border: 1px solid #e8ecf5;
+  border-radius: 8px;
+  padding: 0.75rem;
+  margin-bottom: 0.75rem;
+  background: #f8faff;
+}
+
+.login-shell {
+  min-height: 100vh;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.narrow {
+  width: min(420px, 90vw);
+}
+
+.error {
+  color: #b00020;
+}
+
+.muted {
+  color: #586174;
+}
+
+code {
+  white-space: pre-wrap;
+}

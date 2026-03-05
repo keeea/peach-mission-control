@@ -1,0 +1,39 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="UTF-8" />
+    <title>Kanban · Peach Mission Control</title>
+    <link rel="stylesheet" href="/static/style.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <h1>Kanban</h1>
+      <nav><a href="/">Dashboard</a> <a href="/approvals">Approvals</a> <a href="/reports/weekly">Weekly Report</a></nav>
+      <form method="post" action="/logout"><button type="submit">Logout ({{ user.username }})</button></form>
+    </header>
+
+    <main class="kanban-grid">
+      {% for status in statuses %}
+      <section class="kanban-column card">
+        <h2>{{ status.value }}</h2>
+        {% for task in grouped[status.value] %}
+        <article class="task-card">
+          <h3>#{{ task.id }} {{ task.title }}</h3>
+          <p>{{ task.description }}</p>
+          <small>{{ task.project }} · {{ task.priority.value }} · {{ task.owner.value }}</small>
+          <form method="post" action="/tasks/{{ task.id }}/status" class="inline">
+            <select name="status">
+              <option value="backlog">backlog</option>
+              <option value="in_progress">in_progress</option>
+              <option value="blocked">blocked</option>
+              <option value="done">done</option>
+            </select>
+            <button type="submit">Move</button>
+          </form>
+        </article>
+        {% endfor %}
+      </section>
+      {% endfor %}
+    </main>
+  </body>
+</html>
