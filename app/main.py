@@ -15,7 +15,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Stre
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
-from sqlmodel import select
+from sqlmodel import func, select
 
 from app.db import get_session, init_db
 from app.models import (
@@ -36,6 +36,15 @@ from app.models import (
 SESSION_COOKIE = "pmc_session"
 SESSION_HOURS = 12
 
+
+def _auth_disabled() -> bool:
+    return os.getenv("PMC_AUTH_DISABLED", "1").lower() in {"1", "true", "yes", "on"}
+
+
+def _dev_user() -> User:
+    return User(id=0, username="dev", password_hash="disabled", is_active=True)
+
+
 app = FastAPI(title="Peach Mission Control")
 app.mount("/static", StaticFiles(directory="app/static"), name="static")
 templates = Jinja2Templates(directory="app/templates")
@@ -49,6 +58,7 @@ class TaskCreate(BaseModel):
     project: str = "general"
     due_date: date | None = None
     status: TaskStatus = TaskStatus.backlog
+    sort_order: int | None = None
 
 
 class TaskUpdate(BaseModel):
@@ -59,6 +69,7 @@ class TaskUpdate(BaseModel):
     project: str | None = None
     due_date: date | None = None
     status: TaskStatus | None = None
+    sort_order: int | None = None
 
 
 class ApprovalCreate(BaseModel):
@@ -66,6 +77,16 @@ class ApprovalCreate(BaseModel):
     action_type: str = "external_action"
     payload: dict[str, Any] | list[Any] | str = ""
     requested_by: str = "api"
+
+
+class TaskReorderItem(BaseModel):
+    id: int
+    status: TaskStatus
+    sort_order: int
+
+
+class TaskReorderPayload(BaseModel):
+    items: list[TaskReorderItem]
 
 
 def _now() -> datetime:
@@ -89,6 +110,9 @@ def _verify_password(password: str, stored: str) -> bool:
 
 
 def _current_user(request: Request) -> User:
+    if _auth_disabled():
+        return _dev_user()
+
     token = request.cookies.get(SESSION_COOKIE)
     if not token:
         raise HTTPException(status_code=401, detail="Authentication required")
@@ -105,6 +129,9 @@ def _current_user(request: Request) -> User:
 
 
 def _optional_user(request: Request) -> User | None:
+    if _auth_disabled():
+        return _dev_user()
+
     token = request.cookies.get(SESSION_COOKIE)
     if not token:
         return None
@@ -125,6 +152,7 @@ def _task_to_dict(task: Task) -> dict[str, Any]:
         "owner": task.owner.value,
         "project": task.project,
         "due_date": task.due_date.isoformat() if task.due_date else None,
+        "sort_order": task.sort_order,
         "created_at": task.created_at.isoformat(),
         "updated_at": task.updated_at.isoformat(),
     }
@@ -152,6 +180,17 @@ def _require_html_auth(request: Request) -> User:
     return user
 
 
+def _next_sort_order(session: Any) -> int:
+    max_order = session.exec(select(func.max(Task.sort_order))).one()
+    return int(max_order or 0) + 1
+
+
+def _list_tasks(session: Any) -> list[Task]:
+    return session.exec(
+        select(Task).order_by(Task.status.asc(), Task.sort_order.asc(), Task.updated_at.desc())
+    ).all()
+
+
 @app.on_event("startup")
 def on_startup() -> None:
     init_db()
@@ -168,6 +207,8 @@ def on_startup() -> None:
 
 @app.get("/login", response_class=HTMLResponse)
 def login_page(request: Request) -> HTMLResponse:
+    if _auth_disabled():
+        return RedirectResponse(url="/", status_code=303)
     return templates.TemplateResponse("login.html", {"request": request, "error": ""})
 
 
@@ -245,15 +286,21 @@ def dashboard(request: Request) -> HTMLResponse:
 def kanban_page(request: Request) -> HTMLResponse:
     user = _require_html_auth(request)
     with get_session() as session:
-        tasks = session.exec(select(Task).order_by(Task.updated_at.desc())).all()
+        tasks = _list_tasks(session)
 
     grouped = {status.value: [] for status in TaskStatus}
     for task in tasks:
-        grouped[task.status.value].append(task)
+        grouped[task.status.value].append(_task_to_dict(task))
 
     return templates.TemplateResponse(
         "kanban.html",
-        {"request": request, "user": user, "grouped": grouped, "statuses": list(TaskStatus)},
+        {
+            "request": request,
+            "user": user,
+            "grouped": grouped,
+            "statuses": list(TaskStatus),
+            "tasks_json": json.dumps(grouped),
+        },
     )
 
 
@@ -315,16 +362,17 @@ def create_task(
 ) -> RedirectResponse:
     _require_html_auth(request)
     parsed_due = date.fromisoformat(due_date) if due_date else None
-    task = Task(
-        title=title,
-        description=description,
-        priority=priority,
-        owner=owner,
-        project=project,
-        due_date=parsed_due,
-        updated_at=_now(),
-    )
     with get_session() as session:
+        task = Task(
+            title=title,
+            description=description,
+            priority=priority,
+            owner=owner,
+            project=project,
+            due_date=parsed_due,
+            updated_at=_now(),
+            sort_order=_next_sort_order(session),
+        )
         session.add(task)
         session.commit()
     return RedirectResponse(url="/", status_code=303)
@@ -380,14 +428,28 @@ def create_application(
 @app.get("/api/tasks")
 def api_list_tasks(user: User = Depends(_current_user)) -> JSONResponse:
     with get_session() as session:
-        tasks = session.exec(select(Task).order_by(Task.created_at.desc())).all()
+        tasks = _list_tasks(session)
     return JSONResponse({"items": [_task_to_dict(t) for t in tasks], "actor": user.username})
+
+
+@app.get("/api/tasks/{task_id}")
+def api_get_task(task_id: int, user: User = Depends(_current_user)) -> JSONResponse:
+    with get_session() as session:
+        task = session.get(Task, task_id)
+        if not task:
+            raise HTTPException(status_code=404, detail="Task not found")
+    return JSONResponse(_task_to_dict(task) | {"actor": user.username})
 
 
 @app.post("/api/tasks")
 def api_create_task(payload: TaskCreate, user: User = Depends(_current_user)) -> JSONResponse:
-    task = Task(**payload.model_dump(), updated_at=_now())
     with get_session() as session:
+        body = payload.model_dump(exclude_none=True)
+        task = Task(
+            **body,
+            updated_at=_now(),
+            sort_order=body.get("sort_order", _next_sort_order(session)),
+        )
         session.add(task)
         session.commit()
         session.refresh(task)
@@ -409,6 +471,33 @@ def api_update_task(
         session.commit()
         session.refresh(task)
     return JSONResponse(_task_to_dict(task) | {"updated_by": user.username})
+
+
+@app.post("/api/tasks/reorder")
+def api_reorder_tasks(
+    payload: TaskReorderPayload, user: User = Depends(_current_user)
+) -> JSONResponse:
+    with get_session() as session:
+        touched: list[Task] = []
+        for item in payload.items:
+            task = session.get(Task, item.id)
+            if not task:
+                raise HTTPException(status_code=404, detail=f"Task {item.id} not found")
+            task.status = item.status
+            task.sort_order = item.sort_order
+            task.updated_at = _now()
+            session.add(task)
+            touched.append(task)
+        session.commit()
+        for task in touched:
+            session.refresh(task)
+    ordered = sorted(touched, key=lambda row: row.sort_order)
+    return JSONResponse(
+        {
+            "items": [_task_to_dict(task) for task in ordered],
+            "updated_by": user.username,
+        }
+    )
 
 
 @app.get("/api/approvals")
@@ -466,19 +555,29 @@ def api_review_approval(
 @app.get("/api/export/tasks.json")
 def export_tasks_json(_: User = Depends(_current_user)) -> JSONResponse:
     with get_session() as session:
-        tasks = session.exec(select(Task).order_by(Task.created_at.desc())).all()
+        tasks = _list_tasks(session)
     return JSONResponse({"items": [_task_to_dict(t) for t in tasks]})
 
 
 @app.get("/api/export/tasks.csv")
 def export_tasks_csv(_: User = Depends(_current_user)) -> StreamingResponse:
     with get_session() as session:
-        tasks = session.exec(select(Task).order_by(Task.created_at.desc())).all()
+        tasks = _list_tasks(session)
 
     output = io.StringIO()
     writer = csv.writer(output)
     writer.writerow(
-        ["id", "title", "status", "priority", "owner", "project", "due_date", "updated_at"]
+        [
+            "id",
+            "title",
+            "status",
+            "priority",
+            "owner",
+            "project",
+            "due_date",
+            "sort_order",
+            "updated_at",
+        ]
     )
     for task in tasks:
         writer.writerow(
@@ -490,6 +589,7 @@ def export_tasks_csv(_: User = Depends(_current_user)) -> StreamingResponse:
                 task.owner.value,
                 task.project,
                 task.due_date.isoformat() if task.due_date else "",
+                task.sort_order,
                 task.updated_at.isoformat(),
             ]
         )

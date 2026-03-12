@@ -3,10 +3,11 @@ import os
 from fastapi.testclient import TestClient
 from sqlmodel import SQLModel
 
-from app.db import engine
+from app.db import engine, init_db
 from app.main import app
 from app.models import ApprovalRequest, Task
 
+os.environ["PMC_AUTH_DISABLED"] = "0"
 os.environ["PMC_ADMIN_USER"] = "admin"
 os.environ["PMC_ADMIN_PASSWORD"] = "test-password"
 
@@ -14,6 +15,7 @@ os.environ["PMC_ADMIN_PASSWORD"] = "test-password"
 def reset_db() -> None:
     SQLModel.metadata.drop_all(engine)
     SQLModel.metadata.create_all(engine)
+    init_db()
 
 
 def login(client: TestClient) -> None:
@@ -46,6 +48,9 @@ def test_create_task_and_kanban_flow() -> None:
         page = client.get("/kanban")
         assert page.status_code == 200
         assert "Build DS portfolio website" in page.text
+        assert "Search" in page.text
+        assert "Details" in page.text
+        assert 'data-dropzone="backlog"' in page.text
 
 
 def test_task_api_crud_flow() -> None:
@@ -66,14 +71,48 @@ def test_task_api_crud_flow() -> None:
         )
         assert create.status_code == 201
         task_id = create.json()["id"]
+        assert create.json()["sort_order"] >= 1
 
-        update = client.patch(f"/api/tasks/{task_id}", json={"status": "done"})
+        detail = client.get(f"/api/tasks/{task_id}")
+        assert detail.status_code == 200
+        assert detail.json()["title"] == "API created task"
+
+        update = client.patch(
+            f"/api/tasks/{task_id}",
+            json={"status": "done", "title": "API created task updated"},
+        )
         assert update.status_code == 200
         assert update.json()["status"] == "done"
+        assert update.json()["title"] == "API created task updated"
 
         listed = client.get("/api/tasks")
         assert listed.status_code == 200
-        assert listed.json()["items"][0]["title"] == "API created task"
+        assert listed.json()["items"][0]["title"] == "API created task updated"
+
+
+def test_task_reorder_endpoint_persists_cross_column_move() -> None:
+    reset_db()
+    with TestClient(app) as client:
+        login(client)
+        first = client.post("/api/tasks", json={"title": "Task A", "status": "backlog"}).json()
+        second = client.post("/api/tasks", json={"title": "Task B", "status": "backlog"}).json()
+
+        reorder = client.post(
+            "/api/tasks/reorder",
+            json={
+                "items": [
+                    {"id": second["id"], "status": "in_progress", "sort_order": 1},
+                    {"id": first["id"], "status": "backlog", "sort_order": 1},
+                ]
+            },
+        )
+        assert reorder.status_code == 200
+        items = reorder.json()["items"]
+        assert items[0]["status"] == "in_progress"
+        assert items[0]["sort_order"] == 1
+
+        second_detail = client.get(f"/api/tasks/{second['id']}")
+        assert second_detail.json()["status"] == "in_progress"
 
 
 def test_approval_queue_and_report_endpoints() -> None:
@@ -122,6 +161,7 @@ def test_export_endpoints() -> None:
         assert csv_export.status_code == 200
         assert "text/csv" in csv_export.headers["content-type"]
         assert "Export me" in csv_export.text
+        assert "sort_order" in csv_export.text
 
 
 def test_auth_required_for_api() -> None:

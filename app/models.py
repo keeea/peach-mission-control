@@ -47,13 +47,14 @@ class Task(SQLModel, table=True):
     id: int | None = Field(default=None, primary_key=True)
     title: str
     description: str = ""
-    status: TaskStatus = Field(default=TaskStatus.backlog)
+    status: TaskStatus = Field(default=TaskStatus.backlog, index=True)
     priority: TaskPriority = Field(default=TaskPriority.medium)
     owner: Owner = Field(default=Owner.joint)
     due_date: date | None = None
     project: str = "general"
+    sort_order: int = Field(default=0, index=True)
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
-    updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC), index=True)
 
 
 class Project(SQLModel, table=True):

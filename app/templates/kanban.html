@@ -12,28 +12,357 @@
       <form method="post" action="/logout"><button type="submit">Logout ({{ user.username }})</button></form>
     </header>
 
-    <main class="kanban-grid">
-      {% for status in statuses %}
-      <section class="kanban-column card">
-        <h2>{{ status.value }}</h2>
-        {% for task in grouped[status.value] %}
-        <article class="task-card">
-          <h3>#{{ task.id }} {{ task.title }}</h3>
-          <p>{{ task.description }}</p>
-          <small>{{ task.project }} · {{ task.priority.value }} · {{ task.owner.value }}</small>
-          <form method="post" action="/tasks/{{ task.id }}/status" class="inline">
-            <select name="status">
-              <option value="backlog">backlog</option>
-              <option value="in_progress">in_progress</option>
-              <option value="blocked">blocked</option>
-              <option value="done">done</option>
-            </select>
-            <button type="submit">Move</button>
-          </form>
-        </article>
+    <main class="kanban-shell">
+      <section class="kanban-toolbar card">
+        <div class="toolbar-block toolbar-search">
+          <label for="task-search">Search</label>
+          <input id="task-search" type="search" placeholder="Search title, description, or project" />
+        </div>
+        <div class="toolbar-block">
+          <label for="filter-owner">Owner</label>
+          <select id="filter-owner">
+            <option value="">All owners</option>
+            <option value="lan">Lan</option>
+            <option value="peach">Peach</option>
+            <option value="joint">Joint</option>
+          </select>
+        </div>
+        <div class="toolbar-block">
+          <label for="filter-priority">Priority</label>
+          <select id="filter-priority">
+            <option value="">All priorities</option>
+            <option value="high">High</option>
+            <option value="medium">Medium</option>
+            <option value="low">Low</option>
+          </select>
+        </div>
+        <div class="toolbar-block toolbar-chip-row">
+          <label>Status</label>
+          <div class="chip-row">
+            <button class="chip active" data-status-filter="all" type="button">All</button>
+            {% for status in statuses %}
+            <button class="chip" data-status-filter="{{ status.value }}" type="button">{{ status.value }}</button>
+            {% endfor %}
+          </div>
+        </div>
+      </section>
+
+      <section class="kanban-grid">
+        {% for status in statuses %}
+        <section class="kanban-column card" data-status="{{ status.value }}">
+          <div class="kanban-column-head">
+            <div>
+              <p class="eyebrow">Stage</p>
+              <h2>{{ status.value }}</h2>
+            </div>
+            <span class="count-pill" data-count-for="{{ status.value }}">{{ grouped[status.value]|length }}</span>
+          </div>
+          <div class="kanban-dropzone" data-dropzone="{{ status.value }}">
+            {% for task in grouped[status.value] %}
+            <article
+              class="task-card"
+              draggable="true"
+              data-task-id="{{ task.id }}"
+              data-status="{{ task.status }}"
+              data-priority="{{ task.priority }}"
+              data-owner="{{ task.owner }}"
+              data-project="{{ task.project }}"
+              data-sort-order="{{ task.sort_order }}"
+            >
+              <div class="task-card-head">
+                <span class="task-id">#{{ task.id }}</span>
+                <button class="ghost-button" type="button" data-open-detail="{{ task.id }}">Open</button>
+              </div>
+              <input class="task-title-input" value="{{ task.title }}" aria-label="Task title" />
+              <textarea class="task-description-input" rows="3" aria-label="Task description">{{ task.description }}</textarea>
+              <div class="meta-row">
+                <span class="badge priority-{{ task.priority }}">{{ task.priority }}</span>
+                <span class="badge owner-{{ task.owner }}">{{ task.owner }}</span>
+              </div>
+              <p class="task-project">{{ task.project }}</p>
+              <div class="inline-actions">
+                <button class="primary-button" type="button" data-save-inline="{{ task.id }}">Save</button>
+                <button class="subtle-button" type="button" data-open-detail="{{ task.id }}">Details</button>
+              </div>
+            </article>
+            {% endfor %}
+          </div>
+        </section>
         {% endfor %}
       </section>
-      {% endfor %}
     </main>
+
+    <dialog id="task-detail-dialog" class="detail-dialog">
+      <form method="dialog" class="detail-shell card">
+        <div class="detail-head">
+          <div>
+            <p class="eyebrow">Task detail</p>
+            <h2 id="detail-heading">Task</h2>
+          </div>
+          <button class="ghost-button" type="submit">Close</button>
+        </div>
+        <div class="grid two detail-grid">
+          <label class="stack">
+            <span>Title</span>
+            <input id="detail-title" />
+          </label>
+          <label class="stack">
+            <span>Project</span>
+            <input id="detail-project" />
+          </label>
+          <label class="stack">
+            <span>Status</span>
+            <select id="detail-status">
+              {% for status in statuses %}
+              <option value="{{ status.value }}">{{ status.value }}</option>
+              {% endfor %}
+            </select>
+          </label>
+          <label class="stack">
+            <span>Priority</span>
+            <select id="detail-priority">
+              <option value="high">high</option>
+              <option value="medium">medium</option>
+              <option value="low">low</option>
+            </select>
+          </label>
+          <label class="stack">
+            <span>Owner</span>
+            <select id="detail-owner">
+              <option value="lan">lan</option>
+              <option value="peach">peach</option>
+              <option value="joint">joint</option>
+            </select>
+          </label>
+          <label class="stack">
+            <span>Due date</span>
+            <input id="detail-due-date" type="date" />
+          </label>
+        </div>
+        <label class="stack detail-description">
+          <span>Description</span>
+          <textarea id="detail-description" rows="8"></textarea>
+        </label>
+        <div class="inline-actions detail-actions">
+          <button class="primary-button" id="detail-save" type="button">Save changes</button>
+        </div>
+      </form>
+    </dialog>
+
+    <script id="kanban-bootstrap" type="application/json">{{ tasks_json|safe }}</script>
+    <script>
+      const boardData = JSON.parse(document.getElementById("kanban-bootstrap").textContent);
+      const allStatuses = Object.keys(boardData);
+      const statusFilterButtons = document.querySelectorAll("[data-status-filter]");
+      const ownerFilter = document.getElementById("filter-owner");
+      const priorityFilter = document.getElementById("filter-priority");
+      const searchInput = document.getElementById("task-search");
+      const dialog = document.getElementById("task-detail-dialog");
+      let activeStatusFilter = "all";
+      let activeDetailId = null;
+      let draggedTaskId = null;
+
+      function taskMatches(taskCard) {
+        const searchTerm = searchInput.value.trim().toLowerCase();
+        const haystack = [
+          taskCard.querySelector(".task-title-input").value,
+          taskCard.querySelector(".task-description-input").value,
+          taskCard.dataset.project,
+        ]
+          .join(" ")
+          .toLowerCase();
+        const matchesSearch = !searchTerm || haystack.includes(searchTerm);
+        const matchesOwner = !ownerFilter.value || taskCard.dataset.owner === ownerFilter.value;
+        const matchesPriority = !priorityFilter.value || taskCard.dataset.priority === priorityFilter.value;
+        const matchesStatus =
+          activeStatusFilter === "all" || taskCard.closest(".kanban-column").dataset.status === activeStatusFilter;
+        return matchesSearch && matchesOwner && matchesPriority && matchesStatus;
+      }
+
+      function refreshCounts() {
+        allStatuses.forEach((status) => {
+          const count = document.querySelectorAll(`.task-card[data-status="${status}"]`).length;
+          const pill = document.querySelector(`[data-count-for="${status}"]`);
+          if (pill) pill.textContent = count;
+        });
+      }
+
+      function applyFilters() {
+        document.querySelectorAll(".task-card").forEach((taskCard) => {
+          taskCard.classList.toggle("is-hidden", !taskMatches(taskCard));
+        });
+        document.querySelectorAll(".kanban-column").forEach((column) => {
+          const showColumn = activeStatusFilter === "all" || column.dataset.status === activeStatusFilter;
+          column.classList.toggle("is-muted", !showColumn);
+        });
+      }
+
+      async function patchTask(taskId, payload) {
+        const response = await fetch(`/api/tasks/${taskId}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        if (!response.ok) {
+          throw new Error(`Failed to save task ${taskId}`);
+        }
+        return response.json();
+      }
+
+      async function reorderColumn(column) {
+        const items = Array.from(column.querySelectorAll(".task-card")).map((card, index) => ({
+          id: Number(card.dataset.taskId),
+          status: column.dataset.status,
+          sort_order: index + 1,
+        }));
+        const response = await fetch("/api/tasks/reorder", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ items }),
+        });
+        if (!response.ok) {
+          throw new Error("Failed to reorder tasks");
+        }
+        Array.from(column.querySelectorAll(".task-card")).forEach((card, index) => {
+          card.dataset.status = column.dataset.status;
+          card.dataset.sortOrder = String(index + 1);
+        });
+        refreshCounts();
+        applyFilters();
+      }
+
+      function syncCard(task) {
+        const card = document.querySelector(`[data-task-id="${task.id}"]`);
+        if (!card) return;
+        card.dataset.status = task.status;
+        card.dataset.priority = task.priority;
+        card.dataset.owner = task.owner;
+        card.dataset.project = task.project;
+        card.dataset.sortOrder = String(task.sort_order || 0);
+        card.querySelector(".task-title-input").value = task.title;
+        card.querySelector(".task-description-input").value = task.description || "";
+        card.querySelector(".task-project").textContent = task.project;
+        const badges = card.querySelectorAll(".badge");
+        badges[0].textContent = task.priority;
+        badges[0].className = `badge priority-${task.priority}`;
+        badges[1].textContent = task.owner;
+        badges[1].className = `badge owner-${task.owner}`;
+      }
+
+      document.querySelectorAll("[data-save-inline]").forEach((button) => {
+        button.addEventListener("click", async () => {
+          const card = button.closest(".task-card");
+          const taskId = Number(card.dataset.taskId);
+          button.disabled = true;
+          try {
+            const task = await patchTask(taskId, {
+              title: card.querySelector(".task-title-input").value.trim(),
+              description: card.querySelector(".task-description-input").value.trim(),
+            });
+            syncCard(task);
+          } finally {
+            button.disabled = false;
+          }
+        });
+      });
+
+      statusFilterButtons.forEach((button) => {
+        button.addEventListener("click", () => {
+          activeStatusFilter = button.dataset.statusFilter;
+          statusFilterButtons.forEach((node) => node.classList.toggle("active", node === button));
+          applyFilters();
+        });
+      });
+      [ownerFilter, priorityFilter, searchInput].forEach((input) => input.addEventListener("input", applyFilters));
+
+      document.querySelectorAll(".task-card").forEach((card) => {
+        card.addEventListener("dragstart", () => {
+          draggedTaskId = card.dataset.taskId;
+          card.classList.add("is-dragging");
+        });
+        card.addEventListener("dragend", () => {
+          draggedTaskId = null;
+          card.classList.remove("is-dragging");
+        });
+      });
+
+      document.querySelectorAll(".kanban-dropzone").forEach((dropzone) => {
+        dropzone.addEventListener("dragover", (event) => {
+          event.preventDefault();
+          dropzone.classList.add("is-drop-target");
+          const afterElement = Array.from(dropzone.querySelectorAll(".task-card:not(.is-dragging)"))
+            .find((element) => event.clientY <= element.getBoundingClientRect().top + element.offsetHeight / 2);
+          const dragging = document.querySelector(".task-card.is-dragging");
+          if (!dragging) return;
+          if (!afterElement) {
+            dropzone.appendChild(dragging);
+          } else {
+            dropzone.insertBefore(dragging, afterElement);
+          }
+        });
+        dropzone.addEventListener("dragleave", () => dropzone.classList.remove("is-drop-target"));
+        dropzone.addEventListener("drop", async (event) => {
+          event.preventDefault();
+          dropzone.classList.remove("is-drop-target");
+          if (!draggedTaskId) return;
+          await reorderColumn(dropzone.closest(".kanban-column"));
+        });
+      });
+
+      const detailFields = {
+        title: document.getElementById("detail-title"),
+        description: document.getElementById("detail-description"),
+        project: document.getElementById("detail-project"),
+        status: document.getElementById("detail-status"),
+        priority: document.getElementById("detail-priority"),
+        owner: document.getElementById("detail-owner"),
+        dueDate: document.getElementById("detail-due-date"),
+      };
+
+      async function openDetail(taskId) {
+        const response = await fetch(`/api/tasks/${taskId}`);
+        const task = await response.json();
+        activeDetailId = task.id;
+        document.getElementById("detail-heading").textContent = `#${task.id} ${task.title}`;
+        detailFields.title.value = task.title;
+        detailFields.description.value = task.description || "";
+        detailFields.project.value = task.project || "";
+        detailFields.status.value = task.status;
+        detailFields.priority.value = task.priority;
+        detailFields.owner.value = task.owner;
+        detailFields.dueDate.value = task.due_date || "";
+        dialog.showModal();
+      }
+
+      document.querySelectorAll("[data-open-detail]").forEach((button) => {
+        button.addEventListener("click", () => openDetail(button.dataset.openDetail));
+      });
+
+      document.getElementById("detail-save").addEventListener("click", async () => {
+        if (!activeDetailId) return;
+        const task = await patchTask(activeDetailId, {
+          title: detailFields.title.value.trim(),
+          description: detailFields.description.value.trim(),
+          project: detailFields.project.value.trim(),
+          status: detailFields.status.value,
+          priority: detailFields.priority.value,
+          owner: detailFields.owner.value,
+          due_date: detailFields.dueDate.value || null,
+        });
+        const card = document.querySelector(`[data-task-id="${task.id}"]`);
+        const targetColumn = document.querySelector(`.kanban-column[data-status="${task.status}"] .kanban-dropzone`);
+        if (card && targetColumn && !targetColumn.contains(card)) {
+          targetColumn.prepend(card);
+          await reorderColumn(targetColumn.closest(".kanban-column"));
+        }
+        syncCard(task);
+        refreshCounts();
+        applyFilters();
+        dialog.close();
+      });
+
+      refreshCounts();
+      applyFilters();
+    </script>
   </body>
 </html>

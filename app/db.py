@@ -11,12 +11,15 @@ def migrate_db() -> None:
 
     if "task" in table_names:
         task_columns = {col["name"] for col in inspector.get_columns("task")}
-        if "updated_at" not in task_columns:
-            with engine.begin() as conn:
+        with engine.begin() as conn:
+            if "updated_at" not in task_columns:
                 conn.execute(text("ALTER TABLE task ADD COLUMN updated_at TIMESTAMP"))
                 conn.execute(
                     text("UPDATE task SET updated_at = created_at WHERE updated_at IS NULL")
                 )
+            if "sort_order" not in task_columns:
+                conn.execute(text("ALTER TABLE task ADD COLUMN sort_order INTEGER DEFAULT 0"))
+                conn.execute(text("UPDATE task SET sort_order = id WHERE sort_order IS NULL"))
 
 
 def init_db() -> None:

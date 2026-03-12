@@ -7,7 +7,8 @@ body {
 
 h1,
 h2,
-h3 {
+h3,
+p {
   margin-top: 0;
 }
 
@@ -41,8 +42,8 @@ h3 {
 
 .card {
   background: #fff;
-  border-radius: 10px;
-  box-shadow: 0 2px 6px rgb(28 36 64 / 10%);
+  border-radius: 16px;
+  box-shadow: 0 10px 30px rgb(28 36 64 / 8%);
   padding: 1rem;
 }
 
@@ -52,25 +53,42 @@ h3 {
   gap: 0.5rem;
 }
 
-.inline {
+.inline,
+.inline-actions {
   display: flex;
   gap: 0.5rem;
   margin-top: 0.5rem;
+  flex-wrap: wrap;
 }
 
 input,
 textarea,
 select,
 button {
-  padding: 0.5rem;
+  padding: 0.65rem 0.75rem;
   border: 1px solid #d3d9e5;
-  border-radius: 6px;
+  border-radius: 10px;
+  font: inherit;
 }
 
 button {
   background: #3659e3;
   color: white;
   cursor: pointer;
+}
+
+.primary-button {
+  background: linear-gradient(135deg, #3659e3, #5b78ff);
+}
+
+.subtle-button,
+.ghost-button {
+  background: #eef3ff;
+  color: #22315f;
+}
+
+.ghost-button {
+  border-color: transparent;
 }
 
 table {
@@ -85,19 +103,210 @@ td {
   border-bottom: 1px solid #e8ecf5;
 }
 
+.kanban-shell {
+  padding: 1rem 1.5rem 1.5rem;
+}
+
+.kanban-toolbar {
+  display: grid;
+  grid-template-columns: 2fr repeat(2, minmax(150px, 0.9fr)) 2.1fr;
+  gap: 1rem;
+  margin-bottom: 1rem;
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+.toolbar-block {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.toolbar-search input {
+  min-width: 280px;
+}
+
+.toolbar-chip-row {
+  justify-content: flex-end;
+}
+
+.chip-row {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.chip {
+  background: #eef2fb;
+  color: #38404f;
+}
+
+.chip.active {
+  background: #1c2440;
+  color: #fff;
+}
+
 .kanban-grid {
   display: grid;
-  grid-template-columns: repeat(4, minmax(220px, 1fr));
+  grid-template-columns: repeat(4, minmax(280px, 1fr));
   gap: 1rem;
-  padding: 1rem 1.5rem;
+  align-items: start;
+}
+
+.kanban-column {
+  min-height: 72vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.kanban-column.is-muted {
+  opacity: 0.4;
+}
+
+.kanban-column-head {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  margin-bottom: 0.75rem;
+}
+
+.eyebrow {
+  margin-bottom: 0.25rem;
+  color: #657084;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 0.76rem;
+}
+
+.count-pill,
+.badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.25rem 0.55rem;
+  border-radius: 999px;
+  font-size: 0.8rem;
+}
+
+.count-pill {
+  background: #edf2ff;
+  color: #2940a7;
+}
+
+.kanban-dropzone {
+  min-height: 58vh;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding: 0.15rem;
+  border-radius: 14px;
+}
+
+.kanban-dropzone.is-drop-target {
+  background: #f3f7ff;
+  outline: 2px dashed #7d95ff;
 }
 
 .task-card {
   border: 1px solid #e8ecf5;
-  border-radius: 8px;
-  padding: 0.75rem;
-  margin-bottom: 0.75rem;
+  border-radius: 14px;
+  padding: 0.85rem;
   background: #f8faff;
+}
+
+.task-card.is-hidden {
+  display: none;
+}
+
+.task-card.is-dragging {
+  opacity: 0.55;
+}
+
+.task-card-head,
+.meta-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.task-title-input,
+.task-description-input {
+  width: 100%;
+  background: #fff;
+}
+
+.task-title-input {
+  margin: 0.6rem 0 0.55rem;
+  font-weight: 700;
+}
+
+.task-description-input {
+  resize: vertical;
+  min-height: 88px;
+}
+
+.task-id,
+.task-project {
+  color: #60708a;
+  font-size: 0.9rem;
+}
+
+.priority-high {
+  background: #ffe7e5;
+  color: #b42318;
+}
+
+.priority-medium {
+  background: #fff4dd;
+  color: #b54708;
+}
+
+.priority-low {
+  background: #eaf7ed;
+  color: #027a48;
+}
+
+.owner-lan,
+.owner-peach,
+.owner-joint {
+  background: #edf2ff;
+  color: #2940a7;
+}
+
+.detail-dialog {
+  width: min(840px, 92vw);
+  border: none;
+  padding: 0;
+  background: transparent;
+}
+
+.detail-dialog::backdrop {
+  background: rgb(15 23 42 / 42%);
+}
+
+.detail-shell {
+  padding: 1.25rem;
+}
+
+.detail-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.detail-grid {
+  padding: 0;
+}
+
+.detail-description {
+  margin-top: 0.75rem;
+}
+
+.detail-actions {
+  justify-content: flex-end;
 }
 
 .login-shell {
