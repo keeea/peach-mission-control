@@ -6,35 +6,167 @@
     <link rel="stylesheet" href="/static/style.css" />
   </head>
   <body>
-    <header class="topbar">
-      <h1>Weekly Review</h1>
-      <nav><a href="/">Dashboard</a> <a href="/kanban">Kanban</a> <a href="/approvals">Approvals</a></nav>
+    <header class="topbar topbar-shell">
+      <div>
+        <p class="eyebrow light">Mission Control</p>
+        <h1>Reports</h1>
+      </div>
+      <nav class="topnav">
+        <a href="/{{ '?' + filter_query if filter_query else '' }}">Dashboard</a>
+        <a href="/kanban{{ '?' + filter_query if filter_query else '' }}">Kanban</a>
+        <a class="active" href="/reports/weekly{{ '?' + filter_query if filter_query else '' }}">Reports</a>
+        <a href="/approvals">Approvals</a>
+      </nav>
       <form method="post" action="/logout"><button type="submit">Logout ({{ user.username }})</button></form>
     </header>
-    <section class="grid two">
-      <div class="card">
-        <h2>Tasks (last {{ report.window_days }} days)</h2>
-        <ul>
-          <li>Touched: {{ report.tasks_touched }}</li>
-          <li>Done: {{ report.tasks_done }}</li>
-          <li>Blocked: {{ report.tasks_blocked }}</li>
-        </ul>
-      </div>
-      <div class="card">
-        <h2>Approvals</h2>
-        <ul>
-          <li>Created: {{ report.approvals_created }}</li>
-          <li>Pending: {{ report.approvals_pending }}</li>
-        </ul>
-      </div>
-    </section>
-    <section class="card">
-      <h2>Status Breakdown</h2>
-      <pre>{{ report.status_breakdown }}</pre>
-    </section>
-    <section class="card">
-      <h2>Owner Breakdown</h2>
-      <pre>{{ report.owner_breakdown }}</pre>
-    </section>
+
+    <main class="page-shell">
+      <section class="card filter-card">
+        <div class="section-head">
+          <div>
+            <p class="eyebrow">Global filters</p>
+            <h2>Weekly reporting scope</h2>
+          </div>
+          <span class="count-pill">{{ active_filter_count }} active</span>
+        </div>
+        <form method="get" class="filter-form">
+          <label class="stack">
+            <span>Search</span>
+            <input name="q" type="search" placeholder="title / description / project" value="{{ filters.q }}" />
+          </label>
+          <label class="stack">
+            <span>Project</span>
+            <input name="project" placeholder="project slug" value="{{ filters.project }}" />
+          </label>
+          <label class="stack">
+            <span>Status</span>
+            <select name="status">
+              <option value="">All status</option>
+              {% for status in statuses %}
+              <option value="{{ status }}" {% if filters.status == status %}selected{% endif %}>{{ status }}</option>
+              {% endfor %}
+            </select>
+          </label>
+          <label class="stack">
+            <span>Owner</span>
+            <select name="owner">
+              <option value="">All owners</option>
+              {% for owner in owners %}
+              <option value="{{ owner }}" {% if filters.owner == owner %}selected{% endif %}>{{ owner }}</option>
+              {% endfor %}
+            </select>
+          </label>
+          <label class="stack">
+            <span>Priority</span>
+            <select name="priority">
+              <option value="">All priorities</option>
+              {% for priority in priorities %}
+              <option value="{{ priority }}" {% if filters.priority == priority %}selected{% endif %}>{{ priority }}</option>
+              {% endfor %}
+            </select>
+          </label>
+          <div class="filter-actions">
+            <button type="submit" class="primary-button">Apply</button>
+            <a class="subtle-link" href="/reports/weekly">Reset</a>
+          </div>
+        </form>
+      </section>
+
+      <section class="summary-grid">
+        <article class="metric-card card">
+          <p class="eyebrow">Tasks</p>
+          <h3>{{ report.tasks_touched }}</h3>
+          <p>Touched in last {{ report.window_days }} days</p>
+        </article>
+        <article class="metric-card card success-tint">
+          <p class="eyebrow">Done</p>
+          <h3>{{ report.tasks_done }}</h3>
+          <p>Completed this week</p>
+        </article>
+        <article class="metric-card card danger-tint">
+          <p class="eyebrow">Blocked</p>
+          <h3>{{ report.tasks_blocked }}</h3>
+          <p>Stalled work items</p>
+        </article>
+        <article class="metric-card card warm-tint">
+          <p class="eyebrow">Approvals</p>
+          <h3>{{ report.approvals_pending }}</h3>
+          <p>Pending external decisions</p>
+        </article>
+      </section>
+
+      <section class="grid two dashboard-sections">
+        <article class="card">
+          <div class="section-head">
+            <div>
+              <p class="eyebrow">Throughput</p>
+              <h2>Completed work</h2>
+            </div>
+            <a href="/api/reports/weekly{{ '?' + filter_query if filter_query else '' }}">API</a>
+          </div>
+          <ul class="bullet-list">
+            {% for task in report.throughput %}
+            <li><strong>{{ task.title }}</strong> · {{ task.project }} · {{ task.owner }}</li>
+            {% else %}
+            <li class="muted">No completed items in current slice.</li>
+            {% endfor %}
+          </ul>
+        </article>
+        <article class="card">
+          <div class="section-head">
+            <div>
+              <p class="eyebrow">Blockers</p>
+              <h2>Escalation queue</h2>
+            </div>
+            <a href="/kanban{{ '?' + filter_query if filter_query else '' }}">Open board</a>
+          </div>
+          <ul class="bullet-list">
+            {% for task in report.blockers %}
+            <li><strong>{{ task.title }}</strong> · {{ task.project }} · {{ task.priority }}</li>
+            {% else %}
+            <li class="muted">No blockers in current slice.</li>
+            {% endfor %}
+          </ul>
+        </article>
+      </section>
+
+      <section class="grid two dashboard-sections">
+        <article class="card">
+          <p class="eyebrow">Breakdown</p>
+          <h2>Status / owner / project</h2>
+          <div class="insight-grid">
+            <div class="insight-box wide-box">
+              <span class="muted">Status</span>
+              <code>{{ report.status_breakdown }}</code>
+            </div>
+            <div class="insight-box wide-box">
+              <span class="muted">Owner</span>
+              <code>{{ report.owner_breakdown }}</code>
+            </div>
+            <div class="insight-box wide-box">
+              <span class="muted">Project</span>
+              <code>{{ report.project_breakdown }}</code>
+            </div>
+          </div>
+        </article>
+        <article class="card">
+          <p class="eyebrow">Recent changes</p>
+          <h2>Timeline insight</h2>
+          <ul class="timeline-list">
+            {% for task in report.recent_changes %}
+            <li>
+              <div>
+                <strong>{{ task.title }}</strong>
+                <p class="muted">{{ task.project }} · {{ task.status }} · {{ task.updated_at[:16].replace('T', ' ') }}</p>
+              </div>
+              <span class="badge owner-{{ task.owner }}">{{ task.owner }}</span>
+            </li>
+            {% else %}
+            <li class="muted">No recent changes captured.</li>
+            {% endfor %}
+          </ul>
+        </article>
+      </section>
+    </main>
   </body>
 </html>

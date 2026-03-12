@@ -9,13 +9,14 @@ import secrets
 from collections import Counter
 from datetime import UTC, date, datetime, timedelta
 from typing import Any
+from urllib.parse import urlencode
 
-from fastapi import Depends, FastAPI, Form, HTTPException, Request
+from fastapi import Depends, FastAPI, Form, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
-from sqlmodel import func, select
+from sqlmodel import func, or_, select
 
 from app.db import get_session, init_db
 from app.models import (
@@ -35,6 +36,7 @@ from app.models import (
 
 SESSION_COOKIE = "pmc_session"
 SESSION_HOURS = 12
+FILTER_KEYS = ("q", "project", "status", "owner", "priority")
 
 
 def _auth_disabled() -> bool:
@@ -87,6 +89,47 @@ class TaskReorderItem(BaseModel):
 
 class TaskReorderPayload(BaseModel):
     items: list[TaskReorderItem]
+
+
+class TaskFilterParams(BaseModel):
+    q: str = ""
+    project: str = ""
+    status: str = ""
+    owner: str = ""
+    priority: str = ""
+
+    def cleaned(self) -> dict[str, str]:
+        return {
+            key: value.strip()
+            for key, value in self.model_dump().items()
+            if isinstance(value, str) and value.strip()
+        }
+
+    def query_string(self) -> str:
+        cleaned = self.cleaned()
+        return urlencode(cleaned)
+
+    def with_updates(self, **updates: str) -> str:
+        payload = self.cleaned() | {k: v for k, v in updates.items() if v}
+        payload = {k: v for k, v in payload.items() if v}
+        encoded = urlencode(payload)
+        return f"?{encoded}" if encoded else ""
+
+
+def _read_filters(
+    q: str = Query(""),
+    project: str = Query(""),
+    status: str = Query(""),
+    owner: str = Query(""),
+    priority: str = Query(""),
+) -> TaskFilterParams:
+    return TaskFilterParams(
+        q=q,
+        project=project,
+        status=status,
+        owner=owner,
+        priority=priority,
+    )
 
 
 def _now() -> datetime:
@@ -185,10 +228,149 @@ def _next_sort_order(session: Any) -> int:
     return int(max_order or 0) + 1
 
 
-def _list_tasks(session: Any) -> list[Task]:
+def _task_select(filters: TaskFilterParams):
+    query = select(Task)
+    cleaned = filters.cleaned()
+
+    if search := cleaned.get("q"):
+        needle = f"%{search.lower()}%"
+        query = query.where(
+            or_(
+                func.lower(Task.title).like(needle),
+                func.lower(Task.description).like(needle),
+                func.lower(Task.project).like(needle),
+            )
+        )
+    if project := cleaned.get("project"):
+        query = query.where(func.lower(Task.project) == project.lower())
+    if status := cleaned.get("status"):
+        query = query.where(Task.status == TaskStatus(status))
+    if owner := cleaned.get("owner"):
+        query = query.where(Task.owner == Owner(owner))
+    if priority := cleaned.get("priority"):
+        query = query.where(Task.priority == TaskPriority(priority))
+    return query
+
+
+def _list_tasks(session: Any, filters: TaskFilterParams | None = None) -> list[Task]:
+    filters = filters or TaskFilterParams()
     return session.exec(
-        select(Task).order_by(Task.status.asc(), Task.sort_order.asc(), Task.updated_at.desc())
+        _task_select(filters).order_by(
+            Task.status.asc(),
+            Task.sort_order.asc(),
+            Task.updated_at.desc(),
+        )
     ).all()
+
+
+def _filter_context(tasks: list[Task], filters: TaskFilterParams) -> dict[str, Any]:
+    projects = sorted({task.project for task in tasks if task.project})
+    return {
+        "filters": filters,
+        "filter_query": filters.query_string(),
+        "projects": projects,
+        "owners": [owner.value for owner in Owner],
+        "priorities": [priority.value for priority in TaskPriority],
+        "statuses": [status.value for status in TaskStatus],
+        "active_filter_count": len(filters.cleaned()),
+    }
+
+
+def _dashboard_payload(tasks: list[Task], approvals: list[ApprovalRequest]) -> dict[str, Any]:
+    today = date.today()
+    task_status = Counter(task.status.value for task in tasks)
+    priority_counts = Counter(task.priority.value for task in tasks)
+    owner_counts = Counter(task.owner.value for task in tasks)
+
+    overdue = [
+        task
+        for task in tasks
+        if task.due_date and task.due_date < today and task.status != TaskStatus.done
+    ]
+    due_soon = [
+        task
+        for task in tasks
+        if (
+            task.due_date
+            and today <= task.due_date <= today + timedelta(days=7)
+            and task.status != TaskStatus.done
+        )
+    ]
+    blocked = [task for task in tasks if task.status == TaskStatus.blocked]
+    in_progress = [task for task in tasks if task.status == TaskStatus.in_progress]
+    recent = sorted(tasks, key=lambda task: task.updated_at, reverse=True)[:6]
+    high_priority = [
+        task
+        for task in tasks
+        if task.priority == TaskPriority.high and task.status != TaskStatus.done
+    ]
+    pending_approvals = [item for item in approvals if item.status == ApprovalStatus.pending]
+
+    return {
+        "task_status": task_status,
+        "priority_counts": priority_counts,
+        "owner_counts": owner_counts,
+        "top_summary": {
+            "total": len(tasks),
+            "in_progress": len(in_progress),
+            "blocked": len(blocked),
+            "due_this_week": len(due_soon),
+        },
+        "action_center": {
+            "high_priority": high_priority[:5],
+            "overdue": overdue[:5],
+            "pending_approvals": pending_approvals[:5],
+        },
+        "risk_blockers": {
+            "blocked": blocked[:6],
+            "overdue": overdue[:6],
+        },
+        "timeline": recent,
+        "insights": {
+            "focus_owner": owner_counts.most_common(1)[0][0] if owner_counts else "n/a",
+            "top_priority": priority_counts.most_common(1)[0][0] if priority_counts else "n/a",
+            "completion_ratio": round(
+                (task_status.get(TaskStatus.done.value, 0) / len(tasks)) * 100
+            )
+            if tasks
+            else 0,
+        },
+    }
+
+
+def _weekly_report_data(filters: TaskFilterParams | None = None) -> dict[str, Any]:
+    filters = filters or TaskFilterParams()
+    start = _now() - timedelta(days=7)
+    with get_session() as session:
+        all_tasks = _list_tasks(session, filters)
+        weekly = [task for task in all_tasks if _to_utc(task.updated_at) >= start]
+        approvals = session.exec(select(ApprovalRequest)).all()
+        weekly_approvals = [
+            approval for approval in approvals if _to_utc(approval.created_at) >= start
+        ]
+
+    by_status = Counter(task.status.value for task in weekly)
+    by_owner = Counter(task.owner.value for task in weekly)
+    by_project = Counter(task.project for task in weekly)
+    pending_approvals = [item for item in weekly_approvals if item.status == ApprovalStatus.pending]
+    throughput = [task for task in weekly if task.status == TaskStatus.done]
+    blocked = [task for task in weekly if task.status == TaskStatus.blocked]
+    recent_changes = sorted(weekly, key=lambda task: task.updated_at, reverse=True)[:8]
+
+    return {
+        "window_days": 7,
+        "tasks_touched": len(weekly),
+        "tasks_done": by_status.get(TaskStatus.done.value, 0),
+        "tasks_blocked": by_status.get(TaskStatus.blocked.value, 0),
+        "status_breakdown": dict(by_status),
+        "owner_breakdown": dict(by_owner),
+        "project_breakdown": dict(by_project),
+        "approvals_created": len(weekly_approvals),
+        "approvals_pending": len(pending_approvals),
+        "throughput": [_task_to_dict(task) for task in throughput[:5]],
+        "blockers": [_task_to_dict(task) for task in blocked[:5]],
+        "recent_changes": [_task_to_dict(task) for task in recent_changes],
+    }
 
 
 @app.on_event("startup")
@@ -253,40 +435,37 @@ def logout(request: Request) -> RedirectResponse:
 
 
 @app.get("/", response_class=HTMLResponse)
-def dashboard(request: Request) -> HTMLResponse:
+def dashboard(request: Request, filters: TaskFilterParams = Depends(_read_filters)) -> HTMLResponse:
     user = _require_html_auth(request)
 
     with get_session() as session:
-        tasks = session.exec(select(Task).order_by(Task.created_at.desc())).all()
+        tasks = _list_tasks(session, filters)
         projects = session.exec(select(Project).order_by(Project.created_at.desc())).all()
-        apps = session.exec(select(JobApplication).order_by(JobApplication.created_at.desc())).all()
         approvals = session.exec(
-            select(ApprovalRequest).order_by(ApprovalRequest.created_at.desc()).limit(5)
+            select(ApprovalRequest).order_by(ApprovalRequest.created_at.desc()).limit(10)
         ).all()
 
-    task_status = Counter(t.status.value for t in tasks)
-    app_stage = Counter(a.stage.value for a in apps)
-
+    dashboard_data = _dashboard_payload(tasks, approvals)
     return templates.TemplateResponse(
         "index.html",
         {
             "request": request,
             "user": user,
             "tasks": tasks,
-            "projects": projects,
-            "apps": apps,
-            "approvals": approvals,
-            "task_status": task_status,
-            "app_stage": app_stage,
+            "projects_meta": projects,
+            **dashboard_data,
+            **_filter_context(tasks, filters),
         },
     )
 
 
 @app.get("/kanban", response_class=HTMLResponse)
-def kanban_page(request: Request) -> HTMLResponse:
+def kanban_page(
+    request: Request, filters: TaskFilterParams = Depends(_read_filters)
+) -> HTMLResponse:
     user = _require_html_auth(request)
     with get_session() as session:
-        tasks = _list_tasks(session)
+        tasks = _list_tasks(session, filters)
 
     grouped = {status.value: [] for status in TaskStatus}
     for task in tasks:
@@ -298,8 +477,8 @@ def kanban_page(request: Request) -> HTMLResponse:
             "request": request,
             "user": user,
             "grouped": grouped,
-            "statuses": list(TaskStatus),
             "tasks_json": json.dumps(grouped),
+            **_filter_context(tasks, filters),
         },
     )
 
@@ -342,11 +521,14 @@ def review_approval(
 
 
 @app.get("/reports/weekly", response_class=HTMLResponse)
-def weekly_report_page(request: Request) -> HTMLResponse:
+def weekly_report_page(
+    request: Request, filters: TaskFilterParams = Depends(_read_filters)
+) -> HTMLResponse:
     user = _require_html_auth(request)
-    report = _weekly_report_data()
+    report = _weekly_report_data(filters)
     return templates.TemplateResponse(
-        "weekly_report.html", {"request": request, "user": user, "report": report}
+        "weekly_report.html",
+        {"request": request, "user": user, "report": report, **_filter_context([], filters)},
     )
 
 
@@ -401,9 +583,9 @@ def create_project(
     status: ProjectStatus = Form(ProjectStatus.active),
 ) -> RedirectResponse:
     _require_html_auth(request)
-    p = Project(name=name, goal=goal, status=status)
+    project = Project(name=name, goal=goal, status=status)
     with get_session() as session:
-        session.add(p)
+        session.add(project)
         session.commit()
     return RedirectResponse(url="/", status_code=303)
 
@@ -418,18 +600,26 @@ def create_application(
     notes: str = Form(""),
 ) -> RedirectResponse:
     _require_html_auth(request)
-    a = JobApplication(company=company, role=role, stage=stage, url=url, notes=notes)
+    application = JobApplication(company=company, role=role, stage=stage, url=url, notes=notes)
     with get_session() as session:
-        session.add(a)
+        session.add(application)
         session.commit()
     return RedirectResponse(url="/", status_code=303)
 
 
 @app.get("/api/tasks")
-def api_list_tasks(user: User = Depends(_current_user)) -> JSONResponse:
+def api_list_tasks(
+    filters: TaskFilterParams = Depends(_read_filters), user: User = Depends(_current_user)
+) -> JSONResponse:
     with get_session() as session:
-        tasks = _list_tasks(session)
-    return JSONResponse({"items": [_task_to_dict(t) for t in tasks], "actor": user.username})
+        tasks = _list_tasks(session, filters)
+    return JSONResponse(
+        {
+            "items": [_task_to_dict(task) for task in tasks],
+            "actor": user.username,
+            "filters": filters.cleaned(),
+        }
+    )
 
 
 @app.get("/api/tasks/{task_id}")
@@ -506,7 +696,9 @@ def api_list_approvals(user: User = Depends(_current_user)) -> JSONResponse:
         rows = session.exec(
             select(ApprovalRequest).order_by(ApprovalRequest.created_at.desc())
         ).all()
-    return JSONResponse({"items": [_approval_to_dict(x) for x in rows], "actor": user.username})
+    return JSONResponse(
+        {"items": [_approval_to_dict(item) for item in rows], "actor": user.username}
+    )
 
 
 @app.post("/api/approvals")
@@ -553,16 +745,22 @@ def api_review_approval(
 
 
 @app.get("/api/export/tasks.json")
-def export_tasks_json(_: User = Depends(_current_user)) -> JSONResponse:
+def export_tasks_json(
+    filters: TaskFilterParams = Depends(_read_filters), _: User = Depends(_current_user)
+) -> JSONResponse:
     with get_session() as session:
-        tasks = _list_tasks(session)
-    return JSONResponse({"items": [_task_to_dict(t) for t in tasks]})
+        tasks = _list_tasks(session, filters)
+    return JSONResponse(
+        {"items": [_task_to_dict(task) for task in tasks], "filters": filters.cleaned()}
+    )
 
 
 @app.get("/api/export/tasks.csv")
-def export_tasks_csv(_: User = Depends(_current_user)) -> StreamingResponse:
+def export_tasks_csv(
+    filters: TaskFilterParams = Depends(_read_filters), _: User = Depends(_current_user)
+) -> StreamingResponse:
     with get_session() as session:
-        tasks = _list_tasks(session)
+        tasks = _list_tasks(session, filters)
 
     output = io.StringIO()
     writer = csv.writer(output)
@@ -602,29 +800,7 @@ def export_tasks_csv(_: User = Depends(_current_user)) -> StreamingResponse:
 
 
 @app.get("/api/reports/weekly")
-def api_weekly_report(_: User = Depends(_current_user)) -> JSONResponse:
-    return JSONResponse(_weekly_report_data())
-
-
-def _weekly_report_data() -> dict[str, Any]:
-    start = _now() - timedelta(days=7)
-    with get_session() as session:
-        all_tasks = session.exec(select(Task)).all()
-        weekly = [t for t in all_tasks if _to_utc(t.updated_at) >= start]
-        approvals = session.exec(select(ApprovalRequest)).all()
-        weekly_approvals = [a for a in approvals if _to_utc(a.created_at) >= start]
-
-    by_status = Counter(t.status.value for t in weekly)
-    by_owner = Counter(t.owner.value for t in weekly)
-    pending_approvals = [a for a in weekly_approvals if a.status == ApprovalStatus.pending]
-
-    return {
-        "window_days": 7,
-        "tasks_touched": len(weekly),
-        "tasks_done": by_status.get(TaskStatus.done.value, 0),
-        "tasks_blocked": by_status.get(TaskStatus.blocked.value, 0),
-        "status_breakdown": dict(by_status),
-        "owner_breakdown": dict(by_owner),
-        "approvals_created": len(weekly_approvals),
-        "approvals_pending": len(pending_approvals),
-    }
+def api_weekly_report(
+    filters: TaskFilterParams = Depends(_read_filters), _: User = Depends(_current_user)
+) -> JSONResponse:
+    return JSONResponse(_weekly_report_data(filters) | {"filters": filters.cleaned()})

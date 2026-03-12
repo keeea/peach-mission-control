@@ -90,6 +90,56 @@ def test_task_api_crud_flow() -> None:
         assert listed.json()["items"][0]["title"] == "API created task updated"
 
 
+def test_global_filters_flow_across_dashboard_kanban_and_reports() -> None:
+    reset_db()
+    with TestClient(app) as client:
+        login(client)
+        client.post(
+            "/api/tasks",
+            json={
+                "title": "Alpha ship",
+                "description": "priority scope",
+                "priority": "high",
+                "owner": "lan",
+                "project": "alpha",
+                "status": "blocked",
+            },
+        )
+        client.post(
+            "/api/tasks",
+            json={
+                "title": "Beta cleanup",
+                "priority": "low",
+                "owner": "peach",
+                "project": "beta",
+                "status": "done",
+            },
+        )
+
+        filtered = client.get("/api/tasks", params={"project": "alpha", "owner": "lan"})
+        assert filtered.status_code == 200
+        assert filtered.json()["filters"] == {"project": "alpha", "owner": "lan"}
+        assert len(filtered.json()["items"]) == 1
+        assert filtered.json()["items"][0]["title"] == "Alpha ship"
+
+        dashboard = client.get("/", params={"project": "alpha", "owner": "lan"})
+        assert dashboard.status_code == 200
+        assert "统一过滤语言" in dashboard.text
+        assert "Alpha ship" in dashboard.text
+        assert "Beta cleanup" not in dashboard.text
+
+        kanban = client.get("/kanban", params={"project": "alpha", "owner": "lan"})
+        assert kanban.status_code == 200
+        assert "Execution board scope" in kanban.text
+        assert "Alpha ship" in kanban.text
+        assert "Beta cleanup" not in kanban.text
+
+        report = client.get("/api/reports/weekly", params={"project": "alpha", "owner": "lan"})
+        assert report.status_code == 200
+        assert report.json()["filters"] == {"project": "alpha", "owner": "lan"}
+        assert report.json()["tasks_touched"] == 1
+
+
 def test_task_reorder_endpoint_persists_cross_column_move() -> None:
     reset_db()
     with TestClient(app) as client:

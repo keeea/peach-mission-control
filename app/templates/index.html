@@ -6,99 +6,260 @@
     <link rel="stylesheet" href="/static/style.css" />
   </head>
   <body>
-    <header class="topbar">
-      <h1>Peach Mission Control</h1>
-      <nav>
-        <a href="/">Dashboard</a>
-        <a href="/kanban">Kanban</a>
+    <header class="topbar topbar-shell">
+      <div>
+        <p class="eyebrow light">Mission Control</p>
+        <h1>Dashboard</h1>
+      </div>
+      <nav class="topnav">
+        <a class="active" href="/{{ '?' + filter_query if filter_query else '' }}">Dashboard</a>
+        <a href="/kanban{{ '?' + filter_query if filter_query else '' }}">Kanban</a>
+        <a href="/reports/weekly{{ '?' + filter_query if filter_query else '' }}">Reports</a>
         <a href="/approvals">Approvals</a>
-        <a href="/reports/weekly">Weekly Report</a>
       </nav>
       <form method="post" action="/logout"><button type="submit">Logout ({{ user.username }})</button></form>
     </header>
 
-    <section class="grid two">
-      <div class="card">
-        <h2>Task Status</h2>
-        <ul>
-          <li>Backlog: {{ task_status.get('backlog', 0) }}</li>
-          <li>In Progress: {{ task_status.get('in_progress', 0) }}</li>
-          <li>Blocked: {{ task_status.get('blocked', 0) }}</li>
-          <li>Done: {{ task_status.get('done', 0) }}</li>
-        </ul>
-      </div>
-      <div class="card">
-        <h2>Application Pipeline</h2>
-        <ul>
-          <li>Discovered: {{ app_stage.get('discovered', 0) }}</li>
-          <li>Applied: {{ app_stage.get('applied', 0) }}</li>
-          <li>Interview: {{ app_stage.get('interview', 0) }}</li>
-          <li>Offer: {{ app_stage.get('offer', 0) }}</li>
-          <li>Rejected: {{ app_stage.get('rejected', 0) }}</li>
-        </ul>
-      </div>
-    </section>
+    <main class="page-shell">
+      <section class="hero-band card dark-card">
+        <div>
+          <p class="eyebrow light">Balanced operating view</p>
+          <h2>从统一 filters 进入，而不是默认绑死某个 project。</h2>
+          <p class="muted-light">同一组 query params 会联动 Dashboard / Kanban / Reports：q, project, status, owner, priority。</p>
+        </div>
+        <div class="hero-actions">
+          <a class="primary-link" href="/kanban{{ '?' + filter_query if filter_query else '' }}">Open execution board</a>
+          <a class="ghost-link" href="/reports/weekly{{ '?' + filter_query if filter_query else '' }}">See weekly report</a>
+        </div>
+      </section>
 
-    <section class="grid three">
-      <div class="card">
-        <h2>Add Task</h2>
-        <form method="post" action="/tasks" class="stack">
-          <input name="title" placeholder="title" required />
-          <textarea name="description" placeholder="description"></textarea>
-          <input name="project" placeholder="project" value="general" />
-          <select name="priority">
-            <option value="low">low</option><option value="medium" selected>medium</option><option value="high">high</option>
-          </select>
-          <select name="owner">
-            <option value="lan">lan</option><option value="peach">peach</option><option value="joint" selected>joint</option>
-          </select>
-          <input name="due_date" type="date" />
-          <button type="submit">Create Task</button>
+      <section class="card filter-card">
+        <div class="section-head">
+          <div>
+            <p class="eyebrow">Global filters</p>
+            <h2>统一过滤语言</h2>
+          </div>
+          <span class="count-pill">{{ active_filter_count }} active</span>
+        </div>
+        <form method="get" class="filter-form">
+          <label class="stack">
+            <span>Search</span>
+            <input id="task-search" name="q" type="search" placeholder="title / description / project" value="{{ filters.q }}" />
+          </label>
+          <label class="stack">
+            <span>Project</span>
+            <select name="project">
+              <option value="">All projects</option>
+              {% for project in projects %}
+              <option value="{{ project }}" {% if filters.project == project %}selected{% endif %}>{{ project }}</option>
+              {% endfor %}
+            </select>
+          </label>
+          <label class="stack">
+            <span>Status</span>
+            <select name="status">
+              <option value="">All status</option>
+              {% for status in statuses %}
+              <option value="{{ status }}" {% if filters.status == status %}selected{% endif %}>{{ status }}</option>
+              {% endfor %}
+            </select>
+          </label>
+          <label class="stack">
+            <span>Owner</span>
+            <select id="filter-owner" name="owner">
+              <option value="">All owners</option>
+              {% for owner in owners %}
+              <option value="{{ owner }}" {% if filters.owner == owner %}selected{% endif %}>{{ owner }}</option>
+              {% endfor %}
+            </select>
+          </label>
+          <label class="stack">
+            <span>Priority</span>
+            <select name="priority">
+              <option value="">All priorities</option>
+              {% for priority in priorities %}
+              <option value="{{ priority }}" {% if filters.priority == priority %}selected{% endif %}>{{ priority }}</option>
+              {% endfor %}
+            </select>
+          </label>
+          <div class="filter-actions">
+            <button type="submit" class="primary-button">Apply</button>
+            <a class="subtle-link" href="/">Reset</a>
+          </div>
         </form>
-      </div>
+      </section>
 
-      <div class="card">
-        <h2>Add Project</h2>
-        <form method="post" action="/projects" class="stack">
-          <input name="name" placeholder="project name" required />
-          <textarea name="goal" placeholder="goal"></textarea>
-          <select name="status">
-            <option value="active">active</option><option value="paused">paused</option><option value="done">done</option>
-          </select>
-          <button type="submit">Create Project</button>
-        </form>
-      </div>
+      <section class="summary-grid">
+        <article class="metric-card card">
+          <p class="eyebrow">Top summary</p>
+          <h3>{{ top_summary.total }}</h3>
+          <p>Tasks in current scope</p>
+        </article>
+        <article class="metric-card card">
+          <p class="eyebrow">Execution</p>
+          <h3>{{ top_summary.in_progress }}</h3>
+          <p>In progress</p>
+        </article>
+        <article class="metric-card card danger-tint">
+          <p class="eyebrow">Risk</p>
+          <h3>{{ top_summary.blocked }}</h3>
+          <p>Blocked items</p>
+        </article>
+        <article class="metric-card card warm-tint">
+          <p class="eyebrow">Timeline</p>
+          <h3>{{ top_summary.due_this_week }}</h3>
+          <p>Due in 7 days</p>
+        </article>
+      </section>
 
-      <div class="card">
-        <h2>Add Job Application</h2>
-        <form method="post" action="/applications" class="stack">
-          <input name="company" placeholder="company" required />
-          <input name="role" placeholder="role" required />
-          <select name="stage">
-            <option value="discovered">discovered</option><option value="applied">applied</option><option value="interview">interview</option><option value="offer">offer</option><option value="rejected">rejected</option>
-          </select>
-          <input name="url" placeholder="job URL" />
-          <textarea name="notes" placeholder="notes"></textarea>
-          <button type="submit">Create Application</button>
-        </form>
-      </div>
-    </section>
+      <section class="grid two dashboard-sections">
+        <article class="card">
+          <div class="section-head">
+            <div>
+              <p class="eyebrow">Action center</p>
+              <h2>Next best moves</h2>
+            </div>
+            <a href="/kanban{{ '?' + filter_query if filter_query else '' }}">Open board</a>
+          </div>
+          <div class="stack gap-lg">
+            <div>
+              <h3>High priority focus</h3>
+              <ul class="bullet-list">
+                {% for task in action_center.high_priority %}
+                <li><strong>{{ task.title }}</strong> · {{ task.project }} · {{ task.owner.value }}</li>
+                {% else %}
+                <li class="muted">No high-priority items in current scope.</li>
+                {% endfor %}
+              </ul>
+            </div>
+            <div>
+              <h3>Pending approvals</h3>
+              <ul class="bullet-list">
+                {% for item in action_center.pending_approvals %}
+                <li><strong>{{ item.title }}</strong> · {{ item.requested_by }}</li>
+                {% else %}
+                <li class="muted">Approval queue is clear.</li>
+                {% endfor %}
+              </ul>
+            </div>
+          </div>
+        </article>
 
-    <section class="card">
-      <h2>Quick Exports</h2>
-      <p><a href="/api/export/tasks.json">Export tasks JSON</a> · <a href="/api/export/tasks.csv">Export tasks CSV</a></p>
-    </section>
+        <article class="card">
+          <div class="section-head">
+            <div>
+              <p class="eyebrow">Risk & blockers</p>
+              <h2>What needs intervention</h2>
+            </div>
+            <span class="badge priority-high">{{ risk_blockers.blocked|length + risk_blockers.overdue|length }} signals</span>
+          </div>
+          <div class="stack gap-lg">
+            <div>
+              <h3>Blocked</h3>
+              <ul class="bullet-list">
+                {% for task in risk_blockers.blocked %}
+                <li><strong>{{ task.title }}</strong> · {{ task.project }} · owner {{ task.owner.value }}</li>
+                {% else %}
+                <li class="muted">No blocked tasks.</li>
+                {% endfor %}
+              </ul>
+            </div>
+            <div>
+              <h3>Overdue</h3>
+              <ul class="bullet-list">
+                {% for task in risk_blockers.overdue %}
+                <li><strong>{{ task.title }}</strong> · due {{ task.due_date }}</li>
+                {% else %}
+                <li class="muted">No overdue work.</li>
+                {% endfor %}
+              </ul>
+            </div>
+          </div>
+        </article>
+      </section>
 
-    <section class="card">
-      <h2>Recent Approval Queue</h2>
-      <table>
-        <thead><tr><th>ID</th><th>Title</th><th>Status</th><th>Requested By</th></tr></thead>
-        <tbody>
-          {% for a in approvals %}
-          <tr><td>{{ a.id }}</td><td>{{ a.title }}</td><td>{{ a.status.value }}</td><td>{{ a.requested_by }}</td></tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    </section>
+      <section class="grid two dashboard-sections">
+        <article class="card">
+          <div class="section-head">
+            <div>
+              <p class="eyebrow">Timeline</p>
+              <h2>Latest movement</h2>
+            </div>
+            <a href="/api/export/tasks.json{{ '?' + filter_query if filter_query else '' }}">Export JSON</a>
+          </div>
+          <ul class="timeline-list">
+            {% for task in timeline %}
+            <li>
+              <div>
+                <strong>{{ task.title }}</strong>
+                <p class="muted">{{ task.project }} · {{ task.status.value }} · {{ task.updated_at.strftime('%Y-%m-%d %H:%M') }}</p>
+              </div>
+              <span class="badge owner-{{ task.owner.value }}">{{ task.owner.value }}</span>
+            </li>
+            {% else %}
+            <li class="muted">No task activity in this slice.</li>
+            {% endfor %}
+          </ul>
+        </article>
+
+        <article class="card">
+          <div class="section-head">
+            <div>
+              <p class="eyebrow">Insights</p>
+              <h2>Management readout</h2>
+            </div>
+            <a href="/reports/weekly{{ '?' + filter_query if filter_query else '' }}">Open reports</a>
+          </div>
+          <div class="insight-grid">
+            <div class="insight-box">
+              <span class="muted">Focus owner</span>
+              <strong>{{ insights.focus_owner }}</strong>
+            </div>
+            <div class="insight-box">
+              <span class="muted">Dominant priority</span>
+              <strong>{{ insights.top_priority }}</strong>
+            </div>
+            <div class="insight-box">
+              <span class="muted">Completion ratio</span>
+              <strong>{{ insights.completion_ratio }}%</strong>
+            </div>
+            <div class="insight-box">
+              <span class="muted">Projects in view</span>
+              <strong>{{ projects|length }}</strong>
+            </div>
+          </div>
+          <div class="stack gap-lg section-offset">
+            <div>
+              <h3>Project registry</h3>
+              <ul class="bullet-list compact">
+                {% for project in projects_meta[:6] %}
+                <li><strong>{{ project.name }}</strong> · {{ project.status.value }}{% if project.goal %} · {{ project.goal }}{% endif %}</li>
+                {% else %}
+                <li class="muted">No projects captured yet.</li>
+                {% endfor %}
+              </ul>
+            </div>
+            <div>
+              <h3>Add task</h3>
+              <form method="post" action="/tasks" class="stack">
+                <input name="title" placeholder="title" required />
+                <textarea name="description" placeholder="description"></textarea>
+                <input name="project" placeholder="project" value="{{ filters.project or 'general' }}" />
+                <div class="grid three no-pad">
+                  <select name="priority">
+                    <option value="low">low</option><option value="medium" selected>medium</option><option value="high">high</option>
+                  </select>
+                  <select name="owner">
+                    <option value="lan">lan</option><option value="peach">peach</option><option value="joint" selected>joint</option>
+                  </select>
+                  <input name="due_date" type="date" />
+                </div>
+                <button type="submit">Create Task</button>
+              </form>
+            </div>
+          </div>
+        </article>
+      </section>
+    </main>
   </body>
 </html>

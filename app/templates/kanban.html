@@ -6,59 +6,89 @@
     <link rel="stylesheet" href="/static/style.css" />
   </head>
   <body>
-    <header class="topbar">
-      <h1>Kanban</h1>
-      <nav><a href="/">Dashboard</a> <a href="/approvals">Approvals</a> <a href="/reports/weekly">Weekly Report</a></nav>
+    <header class="topbar topbar-shell">
+      <div>
+        <p class="eyebrow light">Mission Control</p>
+        <h1>Kanban</h1>
+      </div>
+      <nav class="topnav">
+        <a href="/{{ '?' + filter_query if filter_query else '' }}">Dashboard</a>
+        <a class="active" href="/kanban{{ '?' + filter_query if filter_query else '' }}">Kanban</a>
+        <a href="/reports/weekly{{ '?' + filter_query if filter_query else '' }}">Reports</a>
+        <a href="/approvals">Approvals</a>
+      </nav>
       <form method="post" action="/logout"><button type="submit">Logout ({{ user.username }})</button></form>
     </header>
 
-    <main class="kanban-shell">
-      <section class="kanban-toolbar card">
-        <div class="toolbar-block toolbar-search">
-          <label for="task-search">Search</label>
-          <input id="task-search" type="search" placeholder="Search title, description, or project" />
-        </div>
-        <div class="toolbar-block">
-          <label for="filter-owner">Owner</label>
-          <select id="filter-owner">
-            <option value="">All owners</option>
-            <option value="lan">Lan</option>
-            <option value="peach">Peach</option>
-            <option value="joint">Joint</option>
-          </select>
-        </div>
-        <div class="toolbar-block">
-          <label for="filter-priority">Priority</label>
-          <select id="filter-priority">
-            <option value="">All priorities</option>
-            <option value="high">High</option>
-            <option value="medium">Medium</option>
-            <option value="low">Low</option>
-          </select>
-        </div>
-        <div class="toolbar-block toolbar-chip-row">
-          <label>Status</label>
-          <div class="chip-row">
-            <button class="chip active" data-status-filter="all" type="button">All</button>
-            {% for status in statuses %}
-            <button class="chip" data-status-filter="{{ status.value }}" type="button">{{ status.value }}</button>
-            {% endfor %}
+    <main class="kanban-shell page-shell">
+      <section class="card filter-card">
+        <div class="section-head">
+          <div>
+            <p class="eyebrow">Global filters</p>
+            <h2>Execution board scope</h2>
           </div>
+          <span class="count-pill">{{ active_filter_count }} active</span>
         </div>
+        <form method="get" class="filter-form">
+          <label class="stack toolbar-search">
+            <span>Search</span>
+            <input id="task-search" name="q" type="search" placeholder="Search title, description, or project" value="{{ filters.q }}" />
+          </label>
+          <label class="stack">
+            <span>Project</span>
+            <select name="project">
+              <option value="">All projects</option>
+              {% for project in projects %}
+              <option value="{{ project }}" {% if filters.project == project %}selected{% endif %}>{{ project }}</option>
+              {% endfor %}
+            </select>
+          </label>
+          <label class="stack">
+            <span>Status</span>
+            <select name="status">
+              <option value="">All status</option>
+              {% for status in statuses %}
+              <option value="{{ status }}" {% if filters.status == status %}selected{% endif %}>{{ status }}</option>
+              {% endfor %}
+            </select>
+          </label>
+          <label class="stack">
+            <span>Owner</span>
+            <select id="filter-owner" name="owner">
+              <option value="">All owners</option>
+              {% for owner in owners %}
+              <option value="{{ owner }}" {% if filters.owner == owner %}selected{% endif %}>{{ owner }}</option>
+              {% endfor %}
+            </select>
+          </label>
+          <label class="stack">
+            <span>Priority</span>
+            <select name="priority">
+              <option value="">All priorities</option>
+              {% for priority in priorities %}
+              <option value="{{ priority }}" {% if filters.priority == priority %}selected{% endif %}>{{ priority }}</option>
+              {% endfor %}
+            </select>
+          </label>
+          <div class="filter-actions">
+            <button type="submit" class="primary-button">Apply</button>
+            <a class="subtle-link" href="/kanban">Reset</a>
+          </div>
+        </form>
       </section>
 
       <section class="kanban-grid">
         {% for status in statuses %}
-        <section class="kanban-column card" data-status="{{ status.value }}">
+        <section class="kanban-column card" data-status="{{ status }}">
           <div class="kanban-column-head">
             <div>
               <p class="eyebrow">Stage</p>
-              <h2>{{ status.value }}</h2>
+              <h2>{{ status }}</h2>
             </div>
-            <span class="count-pill" data-count-for="{{ status.value }}">{{ grouped[status.value]|length }}</span>
+            <span class="count-pill" data-count-for="{{ status }}">{{ grouped[status]|length }}</span>
           </div>
-          <div class="kanban-dropzone" data-dropzone="{{ status.value }}">
-            {% for task in grouped[status.value] %}
+          <div class="kanban-dropzone" data-dropzone="{{ status }}">
+            {% for task in grouped[status] %}
             <article
               class="task-card"
               draggable="true"
@@ -114,7 +144,7 @@
             <span>Status</span>
             <select id="detail-status">
               {% for status in statuses %}
-              <option value="{{ status.value }}">{{ status.value }}</option>
+              <option value="{{ status }}">{{ status }}</option>
               {% endfor %}
             </select>
           </label>
@@ -153,47 +183,15 @@
     <script>
       const boardData = JSON.parse(document.getElementById("kanban-bootstrap").textContent);
       const allStatuses = Object.keys(boardData);
-      const statusFilterButtons = document.querySelectorAll("[data-status-filter]");
-      const ownerFilter = document.getElementById("filter-owner");
-      const priorityFilter = document.getElementById("filter-priority");
-      const searchInput = document.getElementById("task-search");
       const dialog = document.getElementById("task-detail-dialog");
-      let activeStatusFilter = "all";
       let activeDetailId = null;
       let draggedTaskId = null;
-
-      function taskMatches(taskCard) {
-        const searchTerm = searchInput.value.trim().toLowerCase();
-        const haystack = [
-          taskCard.querySelector(".task-title-input").value,
-          taskCard.querySelector(".task-description-input").value,
-          taskCard.dataset.project,
-        ]
-          .join(" ")
-          .toLowerCase();
-        const matchesSearch = !searchTerm || haystack.includes(searchTerm);
-        const matchesOwner = !ownerFilter.value || taskCard.dataset.owner === ownerFilter.value;
-        const matchesPriority = !priorityFilter.value || taskCard.dataset.priority === priorityFilter.value;
-        const matchesStatus =
-          activeStatusFilter === "all" || taskCard.closest(".kanban-column").dataset.status === activeStatusFilter;
-        return matchesSearch && matchesOwner && matchesPriority && matchesStatus;
-      }
 
       function refreshCounts() {
         allStatuses.forEach((status) => {
           const count = document.querySelectorAll(`.task-card[data-status="${status}"]`).length;
           const pill = document.querySelector(`[data-count-for="${status}"]`);
           if (pill) pill.textContent = count;
-        });
-      }
-
-      function applyFilters() {
-        document.querySelectorAll(".task-card").forEach((taskCard) => {
-          taskCard.classList.toggle("is-hidden", !taskMatches(taskCard));
-        });
-        document.querySelectorAll(".kanban-column").forEach((column) => {
-          const showColumn = activeStatusFilter === "all" || column.dataset.status === activeStatusFilter;
-          column.classList.toggle("is-muted", !showColumn);
         });
       }
 
@@ -228,7 +226,6 @@
           card.dataset.sortOrder = String(index + 1);
         });
         refreshCounts();
-        applyFilters();
       }
 
       function syncCard(task) {
@@ -265,15 +262,6 @@
           }
         });
       });
-
-      statusFilterButtons.forEach((button) => {
-        button.addEventListener("click", () => {
-          activeStatusFilter = button.dataset.statusFilter;
-          statusFilterButtons.forEach((node) => node.classList.toggle("active", node === button));
-          applyFilters();
-        });
-      });
-      [ownerFilter, priorityFilter, searchInput].forEach((input) => input.addEventListener("input", applyFilters));
 
       document.querySelectorAll(".task-card").forEach((card) => {
         card.addEventListener("dragstart", () => {
@@ -357,12 +345,10 @@
         }
         syncCard(task);
         refreshCounts();
-        applyFilters();
         dialog.close();
       });
 
       refreshCounts();
-      applyFilters();
     </script>
   </body>
 </html>

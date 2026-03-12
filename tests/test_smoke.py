@@ -44,3 +44,4 @@ def test_kanban_page_renders_toolbar_and_modal() -> None:
     assert "task-search" in response.text
     assert "task-detail-dialog" in response.text
     assert "filter-owner" in response.text
+    assert "Execution board scope" in response.text
