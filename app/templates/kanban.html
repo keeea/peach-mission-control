@@ -75,7 +75,35 @@
             <a class="subtle-link" href="/kanban">Reset</a>
           </div>
         </form>
+        <div class="filter-context-bar">
+          <div>
+            <p class="context-label">Current scope</p>
+            <p class="context-value">{% if has_active_filters %}The board is narrowed down so you can review only the selected slice.{% else %}Showing the full execution board for all active work.{% endif %}</p>
+          </div>
+          <div class="filter-chip-row">
+            {% if active_filters %}
+              {% for chip in active_filters %}
+              <a class="filter-chip" href="{{ chip.clear_href }}"><span>{{ chip.label }}:</span> {{ chip.value }} <strong>×</strong></a>
+              {% endfor %}
+              <a class="filter-chip subtle" href="/kanban">Clear all</a>
+            {% else %}
+              <span class="empty-inline-note">No active filters.</span>
+            {% endif %}
+          </div>
+        </div>
       </section>
+
+      {% if has_active_filters and grouped.values()|map('length')|sum == 0 %}
+      <section class="card empty-state empty-state-large">
+        <p class="eyebrow">Board state</p>
+        <h2>No tasks match the current board filters.</h2>
+        <p class="muted">Clear one chip or reset all filters to reveal the hidden columns again.</p>
+        <div class="hero-actions">
+          <a class="primary-link" href="/kanban">Reset filters</a>
+          <a class="ghost-link" href="/{{ '?' + filter_query if filter_query else '' }}">Open dashboard</a>
+        </div>
+      </section>
+      {% endif %}
 
       <section class="kanban-grid">
         {% for status in statuses %}
@@ -83,7 +111,7 @@
           <div class="kanban-column-head">
             <div>
               <p class="eyebrow">Stage</p>
-              <h2>{{ status }}</h2>
+              <h2>{{ status.replace('_', ' ') }}</h2>
             </div>
             <span class="count-pill" data-count-for="{{ status }}">{{ grouped[status]|length }}</span>
           </div>
@@ -92,6 +120,7 @@
             <article
               class="task-card"
               draggable="true"
+              tabindex="0"
               data-task-id="{{ task.id }}"
               data-status="{{ task.status }}"
               data-priority="{{ task.priority }}"
@@ -101,20 +130,39 @@
             >
               <div class="task-card-head">
                 <span class="task-id">#{{ task.id }}</span>
-                <button class="ghost-button" type="button" data-open-detail="{{ task.id }}">Open</button>
+                <button class="ghost-button compact-button" type="button" data-open-detail="{{ task.id }}">Open</button>
               </div>
               <input class="task-title-input" value="{{ task.title }}" aria-label="Task title" />
               <textarea class="task-description-input" rows="3" aria-label="Task description">{{ task.description }}</textarea>
-              <div class="meta-row">
+              <div class="meta-row meta-row-tight">
                 <span class="badge priority-{{ task.priority }}">{{ task.priority }}</span>
                 <span class="badge owner-{{ task.owner }}">{{ task.owner }}</span>
               </div>
               <p class="task-project">{{ task.project }}</p>
+              <div class="quick-status-row" aria-label="Quick status change">
+                {% for target_status in statuses %}
+                <button
+                  class="status-chip {% if target_status == task.status %}is-active{% endif %}"
+                  type="button"
+                  data-quick-status="{{ task.id }}"
+                  data-next-status="{{ target_status }}"
+                >
+                  {{ target_status.replace('_', ' ') }}
+                </button>
+                {% endfor %}
+              </div>
               <div class="inline-actions">
-                <button class="primary-button" type="button" data-save-inline="{{ task.id }}">Save</button>
-                <button class="subtle-button" type="button" data-open-detail="{{ task.id }}">Details</button>
+                <button class="primary-button compact-button" type="button" data-save-inline="{{ task.id }}">Save</button>
+                <button class="subtle-button compact-button" type="button" data-open-detail="{{ task.id }}">Details</button>
+                <span class="save-feedback" data-save-feedback="{{ task.id }}"></span>
               </div>
             </article>
+            {% else %}
+            <div class="column-empty-state">
+              <p class="eyebrow">Empty stage</p>
+              <h3>No tasks</h3>
+              <p class="muted">{% if has_active_filters %}Nothing in this lane for the current scope.{% else %}Drag work here or update a task status to populate this stage.{% endif %}</p>
+            </div>
             {% endfor %}
           </div>
         </section>
@@ -228,6 +276,16 @@
         refreshCounts();
       }
 
+      function setFeedback(taskId, message) {
+        const node = document.querySelector(`[data-save-feedback="${taskId}"]`);
+        if (!node) return;
+        node.textContent = message;
+        window.clearTimeout(node._timer);
+        node._timer = window.setTimeout(() => {
+          node.textContent = "";
+        }, 1600);
+      }
+
       function syncCard(task) {
         const card = document.querySelector(`[data-task-id="${task.id}"]`);
         if (!card) return;
@@ -244,6 +302,9 @@
         badges[0].className = `badge priority-${task.priority}`;
         badges[1].textContent = task.owner;
         badges[1].className = `badge owner-${task.owner}`;
+        card.querySelectorAll("[data-quick-status]").forEach((button) => {
+          button.classList.toggle("is-active", button.dataset.nextStatus === task.status);
+        });
       }
 
       document.querySelectorAll("[data-save-inline]").forEach((button) => {
@@ -257,9 +318,27 @@
               description: card.querySelector(".task-description-input").value.trim(),
             });
             syncCard(task);
+            setFeedback(taskId, "Saved");
           } finally {
             button.disabled = false;
           }
+        });
+      });
+
+      document.querySelectorAll("[data-quick-status]").forEach((button) => {
+        button.addEventListener("click", async () => {
+          const card = button.closest(".task-card");
+          const taskId = Number(card.dataset.taskId);
+          const nextStatus = button.dataset.nextStatus;
+          const task = await patchTask(taskId, { status: nextStatus });
+          const targetDropzone = document.querySelector(`[data-dropzone="${task.status}"]`);
+          if (targetDropzone && !targetDropzone.contains(card)) {
+            targetDropzone.prepend(card);
+            await reorderColumn(targetDropzone.closest(".kanban-column"));
+          }
+          syncCard(task);
+          refreshCounts();
+          setFeedback(taskId, `Moved to ${task.status.replace("_", " ")}`);
         });
       });
 
@@ -345,6 +424,7 @@
         }
         syncCard(task);
         refreshCounts();
+        setFeedback(task.id, "Saved");
         dialog.close();
       });
 

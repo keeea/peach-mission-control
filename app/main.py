@@ -263,8 +263,31 @@ def _list_tasks(session: Any, filters: TaskFilterParams | None = None) -> list[T
     ).all()
 
 
-def _filter_context(tasks: list[Task], filters: TaskFilterParams) -> dict[str, Any]:
+def _filter_context(
+    tasks: list[Task], filters: TaskFilterParams, project_options: list[str] | None = None
+) -> dict[str, Any]:
     projects = sorted({task.project for task in tasks if task.project})
+    if project_options:
+        projects = sorted({*projects, *[project for project in project_options if project]})
+
+    cleaned = filters.cleaned()
+    labels = {
+        "q": "Search",
+        "project": "Project",
+        "status": "Status",
+        "owner": "Owner",
+        "priority": "Priority",
+    }
+    active_filters = [
+        {
+            "key": key,
+            "label": labels[key],
+            "value": value,
+            "clear_href": filters.with_updates(**{key: ""}),
+        }
+        for key, value in cleaned.items()
+    ]
+
     return {
         "filters": filters,
         "filter_query": filters.query_string(),
@@ -272,7 +295,9 @@ def _filter_context(tasks: list[Task], filters: TaskFilterParams) -> dict[str, A
         "owners": [owner.value for owner in Owner],
         "priorities": [priority.value for priority in TaskPriority],
         "statuses": [status.value for status in TaskStatus],
-        "active_filter_count": len(filters.cleaned()),
+        "active_filter_count": len(cleaned),
+        "active_filters": active_filters,
+        "has_active_filters": bool(cleaned),
     }
 
 
@@ -446,6 +471,7 @@ def dashboard(request: Request, filters: TaskFilterParams = Depends(_read_filter
         ).all()
 
     dashboard_data = _dashboard_payload(tasks, approvals)
+    project_options = [project.name for project in projects]
     return templates.TemplateResponse(
         "index.html",
         {
@@ -454,7 +480,7 @@ def dashboard(request: Request, filters: TaskFilterParams = Depends(_read_filter
             "tasks": tasks,
             "projects_meta": projects,
             **dashboard_data,
-            **_filter_context(tasks, filters),
+            **_filter_context(tasks, filters, project_options),
         },
     )
 
@@ -466,6 +492,7 @@ def kanban_page(
     user = _require_html_auth(request)
     with get_session() as session:
         tasks = _list_tasks(session, filters)
+        projects = session.exec(select(Project).order_by(Project.created_at.desc())).all()
 
     grouped = {status.value: [] for status in TaskStatus}
     for task in tasks:
@@ -478,7 +505,7 @@ def kanban_page(
             "user": user,
             "grouped": grouped,
             "tasks_json": json.dumps(grouped),
-            **_filter_context(tasks, filters),
+            **_filter_context(tasks, filters, [project.name for project in projects]),
         },
     )
 
@@ -526,9 +553,17 @@ def weekly_report_page(
 ) -> HTMLResponse:
     user = _require_html_auth(request)
     report = _weekly_report_data(filters)
+    with get_session() as session:
+        tasks = _list_tasks(session, filters)
+        projects = session.exec(select(Project).order_by(Project.created_at.desc())).all()
     return templates.TemplateResponse(
         "weekly_report.html",
-        {"request": request, "user": user, "report": report, **_filter_context([], filters)},
+        {
+            "request": request,
+            "user": user,
+            "report": report,
+            **_filter_context(tasks, filters, [project.name for project in projects]),
+        },
     )
 
 

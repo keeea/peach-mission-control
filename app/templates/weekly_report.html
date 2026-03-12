@@ -36,7 +36,12 @@
           </label>
           <label class="stack">
             <span>Project</span>
-            <input name="project" placeholder="project slug" value="{{ filters.project }}" />
+            <select name="project">
+              <option value="">All projects</option>
+              {% for project in projects %}
+              <option value="{{ project }}" {% if filters.project == project %}selected{% endif %}>{{ project }}</option>
+              {% endfor %}
+            </select>
           </label>
           <label class="stack">
             <span>Status</span>
@@ -70,6 +75,22 @@
             <a class="subtle-link" href="/reports/weekly">Reset</a>
           </div>
         </form>
+        <div class="filter-context-bar">
+          <div>
+            <p class="context-label">Current scope</p>
+            <p class="context-value">{% if has_active_filters %}This report is narrowed to a filtered management slice.{% else %}This report summarizes the full weekly mission-control picture.{% endif %}</p>
+          </div>
+          <div class="filter-chip-row">
+            {% if active_filters %}
+              {% for chip in active_filters %}
+              <a class="filter-chip" href="{{ chip.clear_href }}"><span>{{ chip.label }}:</span> {{ chip.value }} <strong>×</strong></a>
+              {% endfor %}
+              <a class="filter-chip subtle" href="/reports/weekly">Clear all</a>
+            {% else %}
+              <span class="empty-inline-note">No active filters.</span>
+            {% endif %}
+          </div>
+        </div>
       </section>
 
       <section class="summary-grid">
@@ -95,6 +116,18 @@
         </article>
       </section>
 
+      {% if report.tasks_touched == 0 %}
+      <section class="card empty-state empty-state-large">
+        <p class="eyebrow">Report state</p>
+        <h2>{% if has_active_filters %}No weekly activity matches the current filters.{% else %}No weekly activity captured yet.{% endif %}</h2>
+        <p class="muted">{% if has_active_filters %}Reset or broaden the report filters to bring activity back into view.{% else %}As tasks get updated, done, or blocked, this report will turn into a readable weekly pulse.{% endif %}</p>
+        <div class="hero-actions">
+          {% if has_active_filters %}<a class="primary-link" href="/reports/weekly">Reset filters</a>{% endif %}
+          <a class="ghost-link" href="/kanban{{ '?' + filter_query if filter_query else '' }}">Open board</a>
+        </div>
+      </section>
+      {% endif %}
+
       <section class="grid two dashboard-sections">
         <article class="card">
           <div class="section-head">
@@ -104,11 +137,17 @@
             </div>
             <a href="/api/reports/weekly{{ '?' + filter_query if filter_query else '' }}">API</a>
           </div>
-          <ul class="bullet-list">
+          <ul class="bullet-list rich-list">
             {% for task in report.throughput %}
-            <li><strong>{{ task.title }}</strong> · {{ task.project }} · {{ task.owner }}</li>
+            <li>
+              <div>
+                <strong>{{ task.title }}</strong>
+                <p class="muted">{{ task.project }} · owner {{ task.owner }} · {{ task.updated_at[:16].replace('T', ' ') }}</p>
+              </div>
+              <span class="badge priority-low">done</span>
+            </li>
             {% else %}
-            <li class="muted">No completed items in current slice.</li>
+            <li class="empty-inline-note">No completed items in current slice.</li>
             {% endfor %}
           </ul>
         </article>
@@ -120,11 +159,17 @@
             </div>
             <a href="/kanban{{ '?' + filter_query if filter_query else '' }}">Open board</a>
           </div>
-          <ul class="bullet-list">
+          <ul class="bullet-list rich-list">
             {% for task in report.blockers %}
-            <li><strong>{{ task.title }}</strong> · {{ task.project }} · {{ task.priority }}</li>
+            <li>
+              <div>
+                <strong>{{ task.title }}</strong>
+                <p class="muted">{{ task.project }} · {{ task.priority }}{% if task.due_date %} · due {{ task.due_date }}{% endif %}</p>
+              </div>
+              <span class="badge priority-high">blocked</span>
+            </li>
             {% else %}
-            <li class="muted">No blockers in current slice.</li>
+            <li class="empty-inline-note">No blockers in current slice.</li>
             {% endfor %}
           </ul>
         </article>
@@ -134,18 +179,36 @@
         <article class="card">
           <p class="eyebrow">Breakdown</p>
           <h2>Status / owner / project</h2>
-          <div class="insight-grid">
+          <div class="report-breakdown-grid">
             <div class="insight-box wide-box">
               <span class="muted">Status</span>
-              <code>{{ report.status_breakdown }}</code>
+              <ul class="stacked-stat-list">
+                {% for key, value in report.status_breakdown.items() %}
+                <li><span>{{ key.replace('_', ' ') }}</span><strong>{{ value }}</strong></li>
+                {% else %}
+                <li class="empty-inline-note">No status activity.</li>
+                {% endfor %}
+              </ul>
             </div>
             <div class="insight-box wide-box">
               <span class="muted">Owner</span>
-              <code>{{ report.owner_breakdown }}</code>
+              <ul class="stacked-stat-list">
+                {% for key, value in report.owner_breakdown.items() %}
+                <li><span>{{ key }}</span><strong>{{ value }}</strong></li>
+                {% else %}
+                <li class="empty-inline-note">No owner activity.</li>
+                {% endfor %}
+              </ul>
             </div>
             <div class="insight-box wide-box">
               <span class="muted">Project</span>
-              <code>{{ report.project_breakdown }}</code>
+              <ul class="stacked-stat-list">
+                {% for key, value in report.project_breakdown.items() %}
+                <li><span>{{ key }}</span><strong>{{ value }}</strong></li>
+                {% else %}
+                <li class="empty-inline-note">No project activity.</li>
+                {% endfor %}
+              </ul>
             </div>
           </div>
         </article>
@@ -157,12 +220,12 @@
             <li>
               <div>
                 <strong>{{ task.title }}</strong>
-                <p class="muted">{{ task.project }} · {{ task.status }} · {{ task.updated_at[:16].replace('T', ' ') }}</p>
+                <p class="muted">{{ task.project }} · {{ task.status.replace('_', ' ') }} · {{ task.updated_at[:16].replace('T', ' ') }}</p>
               </div>
               <span class="badge owner-{{ task.owner }}">{{ task.owner }}</span>
             </li>
             {% else %}
-            <li class="muted">No recent changes captured.</li>
+            <li class="empty-inline-note">No recent changes captured.</li>
             {% endfor %}
           </ul>
         </article>

@@ -24,8 +24,8 @@
       <section class="hero-band card dark-card">
         <div>
           <p class="eyebrow light">Balanced operating view</p>
-          <h2>从统一 filters 进入，而不是默认绑死某个 project。</h2>
-          <p class="muted-light">同一组 query params 会联动 Dashboard / Kanban / Reports：q, project, status, owner, priority。</p>
+          <h2>统一看任务、风险、审批与本周节奏。</h2>
+          <p class="muted-light">Dashboard / Kanban / Reports 共享同一组 query params，让 review、执行与复盘保持同一上下文。</p>
         </div>
         <div class="hero-actions">
           <a class="primary-link" href="/kanban{{ '?' + filter_query if filter_query else '' }}">Open execution board</a>
@@ -87,6 +87,22 @@
             <a class="subtle-link" href="/">Reset</a>
           </div>
         </form>
+        <div class="filter-context-bar">
+          <div>
+            <p class="context-label">Current scope</p>
+            <p class="context-value">{% if has_active_filters %}Showing a filtered operating view across dashboard, kanban, and reports.{% else %}Showing all tasks and all projects in mission control.{% endif %}</p>
+          </div>
+          <div class="filter-chip-row">
+            {% if active_filters %}
+              {% for chip in active_filters %}
+              <a class="filter-chip" href="{{ chip.clear_href }}"><span>{{ chip.label }}:</span> {{ chip.value }} <strong>×</strong></a>
+              {% endfor %}
+              <a class="filter-chip subtle" href="/">Clear all</a>
+            {% else %}
+              <span class="empty-inline-note">No active filters.</span>
+            {% endif %}
+          </div>
+        </div>
       </section>
 
       <section class="summary-grid">
@@ -112,6 +128,20 @@
         </article>
       </section>
 
+      {% if not tasks %}
+      <section class="card empty-state empty-state-large">
+        <p class="eyebrow">Dashboard state</p>
+        <h2>{% if has_active_filters %}No tasks match the current filters.{% else %}No tasks yet in mission control.{% endif %}</h2>
+        <p class="muted">{% if has_active_filters %}Try clearing one chip or reset the full scope to recover hidden work items.{% else %}Create the first task below to seed the dashboard and execution board.{% endif %}</p>
+        <div class="hero-actions">
+          {% if has_active_filters %}
+          <a class="primary-link" href="/">Reset filters</a>
+          {% endif %}
+          <a class="ghost-link" href="/kanban{{ '?' + filter_query if filter_query else '' }}">Open board</a>
+        </div>
+      </section>
+      {% endif %}
+
       <section class="grid two dashboard-sections">
         <article class="card">
           <div class="section-head">
@@ -124,21 +154,33 @@
           <div class="stack gap-lg">
             <div>
               <h3>High priority focus</h3>
-              <ul class="bullet-list">
+              <ul class="bullet-list rich-list">
                 {% for task in action_center.high_priority %}
-                <li><strong>{{ task.title }}</strong> · {{ task.project }} · {{ task.owner.value }}</li>
+                <li>
+                  <div>
+                    <strong>{{ task.title }}</strong>
+                    <p class="muted">{{ task.project }} · owner {{ task.owner.value }}{% if task.due_date %} · due {{ task.due_date }}{% endif %}</p>
+                  </div>
+                  <span class="badge priority-{{ task.priority.value }}">{{ task.priority.value }}</span>
+                </li>
                 {% else %}
-                <li class="muted">No high-priority items in current scope.</li>
+                <li class="empty-inline-note">No high-priority items in current scope.</li>
                 {% endfor %}
               </ul>
             </div>
             <div>
               <h3>Pending approvals</h3>
-              <ul class="bullet-list">
+              <ul class="bullet-list rich-list">
                 {% for item in action_center.pending_approvals %}
-                <li><strong>{{ item.title }}</strong> · {{ item.requested_by }}</li>
+                <li>
+                  <div>
+                    <strong>{{ item.title }}</strong>
+                    <p class="muted">requested by {{ item.requested_by }}</p>
+                  </div>
+                  <a class="subtle-link compact-link" href="/approvals">Review</a>
+                </li>
                 {% else %}
-                <li class="muted">Approval queue is clear.</li>
+                <li class="empty-inline-note">Approval queue is clear.</li>
                 {% endfor %}
               </ul>
             </div>
@@ -156,21 +198,33 @@
           <div class="stack gap-lg">
             <div>
               <h3>Blocked</h3>
-              <ul class="bullet-list">
+              <ul class="bullet-list rich-list">
                 {% for task in risk_blockers.blocked %}
-                <li><strong>{{ task.title }}</strong> · {{ task.project }} · owner {{ task.owner.value }}</li>
+                <li>
+                  <div>
+                    <strong>{{ task.title }}</strong>
+                    <p class="muted">{{ task.project }} · owner {{ task.owner.value }}</p>
+                  </div>
+                  <a class="subtle-link compact-link" href="/kanban{{ '?' + filter_query if filter_query else '' }}">Resolve</a>
+                </li>
                 {% else %}
-                <li class="muted">No blocked tasks.</li>
+                <li class="empty-inline-note">No blocked tasks.</li>
                 {% endfor %}
               </ul>
             </div>
             <div>
               <h3>Overdue</h3>
-              <ul class="bullet-list">
+              <ul class="bullet-list rich-list">
                 {% for task in risk_blockers.overdue %}
-                <li><strong>{{ task.title }}</strong> · due {{ task.due_date }}</li>
+                <li>
+                  <div>
+                    <strong>{{ task.title }}</strong>
+                    <p class="muted">{{ task.project }} · due {{ task.due_date }}</p>
+                  </div>
+                  <span class="badge priority-high">overdue</span>
+                </li>
                 {% else %}
-                <li class="muted">No overdue work.</li>
+                <li class="empty-inline-note">No overdue work.</li>
                 {% endfor %}
               </ul>
             </div>
@@ -197,7 +251,7 @@
               <span class="badge owner-{{ task.owner.value }}">{{ task.owner.value }}</span>
             </li>
             {% else %}
-            <li class="muted">No task activity in this slice.</li>
+            <li class="empty-inline-note">No task activity in this slice.</li>
             {% endfor %}
           </ul>
         </article>
@@ -231,11 +285,17 @@
           <div class="stack gap-lg section-offset">
             <div>
               <h3>Project registry</h3>
-              <ul class="bullet-list compact">
+              <ul class="bullet-list compact rich-list">
                 {% for project in projects_meta[:6] %}
-                <li><strong>{{ project.name }}</strong> · {{ project.status.value }}{% if project.goal %} · {{ project.goal }}{% endif %}</li>
+                <li>
+                  <div>
+                    <strong>{{ project.name }}</strong>
+                    <p class="muted">{{ project.goal or 'No goal captured yet.' }}</p>
+                  </div>
+                  <span class="badge owner-joint">{{ project.status.value }}</span>
+                </li>
                 {% else %}
-                <li class="muted">No projects captured yet.</li>
+                <li class="empty-inline-note">No projects captured yet.</li>
                 {% endfor %}
               </ul>
             </div>
